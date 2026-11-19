@@ -1,0 +1,2901 @@
+<!DOCTYPE html>
+<!--
+  SPDX-FileCopyrightText: 2026 Kiomet clone contributors
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Kiomet — 实时领地塔防</title>
+<style>
+:root{
+  --bg:#2d3436; --panel:#00000033; --panel-solid:#20282a; --text:#e8ecf1;
+  --blue:#74b9ff; --red:#c0392b; --purple:#8644fc; --gold:#ffd166;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--text);
+  font:14px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft Yahei",sans-serif;
+  user-select:none;-webkit-user-select:none}
+#app{position:absolute;inset:0;z-index:0}
+#topbar,#leaderboard,#alerts,#chat,#controls,#zoomctl,#tower-menu,#spawn,#dialog{position:absolute;z-index:2}
+#icons{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:1}
+.tico{position:absolute;will-change:left,top;filter:drop-shadow(0 1px 1px #0008)}
+#canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;z-index:0}
+.hidden{display:none!important}
+
+/* top bar */
+#topbar{position:absolute;left:0;right:0;top:0;display:flex;justify-content:center;gap:1.5rem;
+  padding:.4rem .75rem;pointer-events:none;font-size:.85rem;color:#cfd8e3}
+#topbar .stat{background:var(--panel);border-radius:.35rem;padding:.2rem .55rem;pointer-events:auto}
+#topbar b{color:#fff;font-size:.95rem}
+
+/* leaderboard */
+#leaderboard{position:absolute;right:.6rem;top:.6rem;min-width:11rem;max-width:24vw;
+  background:var(--panel);border-radius:.4rem;padding:.35rem .5rem;font-size:.8rem;backdrop-filter:blur(2px)}
+.lb-head{font-weight:600;opacity:.85;margin-bottom:.2rem;font-size:.78rem}
+.lb-row{display:flex;align-items:center;gap:.3rem;line-height:1.5;white-space:nowrap}
+.lb-row.me{color:#fff;font-weight:600}
+.lb-n{opacity:.6;width:1.2rem}
+.lb-dot{width:.5rem;height:.5rem;border-radius:50%}
+.lb-name{flex:1;overflow:hidden;text-overflow:ellipsis}
+.lb-score{font-variant-numeric:tabular-nums;opacity:.9}
+.lb-foot{margin-top:.25rem;opacity:.5;font-size:.72rem}
+
+/* alerts */
+#alerts{position:absolute;left:.6rem;top:.6rem;display:flex;flex-direction:column;gap:.3rem;
+  max-width:25%;pointer-events:none}
+.alert{display:flex;align-items:center;gap:.4rem;background:var(--panel);border-radius:.35rem;
+  padding:.3rem .45rem;font-size:.8rem;pointer-events:auto}
+.alert.bad{background:#c0392b55}
+.alert-dot{width:.45rem;height:.45rem;border-radius:50%;background:var(--blue);flex:none}
+.alert.bad .alert-dot{background:var(--red)}
+.alert-main{font-weight:600}
+.alert-sub{opacity:.75;font-size:.75rem}
+.alert-x{opacity:.6;cursor:pointer;margin-left:auto;padding-left:.3rem}
+
+/* chat */
+#chat{position:absolute;left:.6rem;bottom:.6rem;width:22rem;max-width:38vw;font-size:.8rem}
+#chat-log{max-height:8rem;overflow:auto;margin-bottom:.3rem;display:flex;flex-direction:column;gap:.15rem}
+.chat-line{background:var(--panel);border-radius:.3rem;padding:.2rem .4rem}
+.chat-line.mine .chat-name{color:var(--blue)}
+.chat-name{opacity:.8}
+#chat-form{display:flex;gap:.3rem}
+#chat-input{flex:1;background:#00000055;border:1px solid #ffffff22;border-radius:.3rem;color:var(--text);
+  padding:.3rem .45rem;font:inherit;outline:none}
+#chat-input:focus{border-color:var(--blue)}
+
+/* bottom right buttons */
+#controls{position:absolute;right:.6rem;bottom:.6rem;display:flex;gap:.35rem;flex-wrap:wrap;justify-content:flex-end}
+#controls button,#zoomctl button{background:var(--panel);border:1px solid #ffffff22;color:var(--text);
+  border-radius:.35rem;padding:.35rem .55rem;font:inherit;cursor:pointer}
+#controls button:hover,#zoomctl button:hover{background:#ffffff18}
+#controls button.active{background:#74b9ff33;border-color:var(--blue)}
+#zoomctl{position:absolute;right:.6rem;bottom:3.2rem;display:flex;gap:.35rem}
+
+/* tower menu */
+#tower-menu{position:absolute;z-index:20;min-width:11rem;max-width:16rem;background:#0f1416e6;
+  border:1px solid #ffffff26;border-radius:.45rem;padding:.5rem;font-size:.8rem;backdrop-filter:blur(3px);
+  box-shadow:0 6px 24px #0006}
+.tm-head{display:flex;align-items:center;gap:.35rem;margin-bottom:.35rem}
+.tm-icon{width:1.55rem;height:1.55rem;object-fit:contain}
+.tm-title{font-weight:700;font-size:.95rem}
+.tm-owner{margin-left:auto;opacity:.7;font-size:.75rem}
+.tm-delay{color:var(--gold);margin-bottom:.3rem}
+.tm-units{display:flex;flex-direction:column;gap:.15rem;margin-bottom:.4rem}
+.tm-unit{display:flex;align-items:center;gap:.35rem}
+.tm-count{font-variant-numeric:tabular-nums;opacity:.95}
+.tm-gen{margin-left:auto;opacity:.55;font-size:.72rem}
+.tm-ups{display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:.35rem}
+.tm-up{position:relative;display:flex;flex-direction:column;align-items:center;gap:.15rem;
+  width:3.6rem;padding:.25rem;border-radius:.35rem;border:1px solid #ffffff26;background:#74b9ff22;cursor:pointer}
+.tm-up:hover{background:#74b9ff33}
+.tm-up.down{background:#c0392b33}
+.tm-up.locked{opacity:.45;cursor:not-allowed}
+.tm-up-icon{width:1.9rem;height:1.9rem;object-fit:contain}
+.tm-req{display:flex;flex-direction:column;gap:.05rem;font-size:.68rem;opacity:.85}
+.tm-req-item{display:flex;align-items:center;gap:.15rem;white-space:nowrap}
+.tm-req-item.ok{color:#8fe3a0}
+.tm-req-icon{width:.85rem;height:.85rem;object-fit:contain}
+.tm-btn{width:100%;margin-top:.2rem;background:#00000055;border:1px solid #ffffff33;color:var(--text);
+  border-radius:.3rem;padding:.3rem;font:inherit;cursor:pointer}
+.tm-btn.danger{background:#c0392b44;border-color:#c0392b88}
+.dot{display:inline-block;width:.55rem;height:.55rem;border-radius:50%;background:var(--blue)}
+.tm-hint{margin-top:.3rem;opacity:.6;font-size:.72rem;line-height:1.3}
+
+/* unit badges */
+[class^="unit-"]{display:inline-block;width:.8rem;height:.8rem;border-radius:.15rem;flex:none}
+.unit-shield{background:#b4cdff;border-radius:50%}
+.unit-fighter{background:#7fd1ff;clip-path:polygon(50% 0,100% 100%,0 100%)}
+.unit-chopper{background:#9be15d;border-radius:.2rem .2rem .5rem .5rem}
+.unit-bomber{background:#ffd166;clip-path:polygon(0 40%,100% 50%,0 60%)}
+.unit-tank{background:#f2a65a;border-radius:.2rem}
+.unit-soldier{background:#e8eef6;border-radius:50% 50% 20% 20%}
+.unit-shell{background:#ff9f1c;clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%)}
+.unit-emp{background:#4cc9f0;clip-path:polygon(50% 0,60% 40%,100% 50%,60% 60%,50% 100%,40% 60%,0 50%,40% 40%)}
+.unit-nuke{background:#ff4d4d;border-radius:50%;box-shadow:0 0 4px #ff4d4d}
+.unit-king{background:var(--gold);clip-path:polygon(0 100%,10% 30%,35% 60%,50% 10%,65% 60%,90% 30%,100% 100%)}
+
+/* spawn overlay */
+#spawn{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:.8rem;background:radial-gradient(circle at 50% 45%,#00000000,#00000066);z-index:40}
+#spawn h1{margin:0;font-size:2.6rem;letter-spacing:.02em}
+#spawn h1 span{color:#a5a5a5;font-size:1.4rem}
+#spawn .sub{opacity:.8;margin:0}
+#spawn input{width:14rem;text-align:center;background:#00000055;border:1px solid #ffffff33;border-radius:.4rem;
+  color:#fff;padding:.45rem;font:inherit;outline:none}
+#spawn input:focus{border-color:var(--blue)}
+#play-btn{background:var(--blue);color:#0b1620;border:none;border-radius:.5rem;padding:.6rem 2.6rem;
+  font-size:1.15rem;font-weight:700;cursor:pointer;box-shadow:0 4px 18px #74b9ff55}
+#play-btn:hover{filter:brightness(1.08)}
+#death-reason{color:#ffb3a7;font-style:italic}
+
+/* dialogs */
+#dialog{position:absolute;inset:0;background:#00000088;display:flex;align-items:center;justify-content:center;z-index:50}
+#dialog .card{background:var(--panel-solid);border-radius:.6rem;padding:1rem 1.2rem;max-width:min(56rem,92vw);
+  max-height:82vh;overflow:auto;box-shadow:0 12px 40px #0008}
+#dialog .card h2{margin:0 0 .6rem}
+#dialog-close{float:right;background:#00000055;border:1px solid #ffffff33;color:var(--text);border-radius:.3rem;
+  padding:.15rem .5rem;cursor:pointer}
+.tbl{width:100%;border-collapse:collapse;font-size:.82rem}
+.tbl th,.tbl td{text-align:left;padding:.25rem .45rem;border-bottom:1px solid #ffffff14;vertical-align:top}
+.tbl th{opacity:.7;font-weight:600;position:sticky;top:0;background:var(--panel-solid)}
+
+/* small screens */
+@media (max-width:720px){
+  #leaderboard{font-size:.72rem;min-width:8.5rem}
+  #chat{width:14rem}
+  #chat-log{max-height:5rem}
+  #tower-menu{max-width:13rem;font-size:.76rem}
+  #spawn h1{font-size:2rem}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="canvas"></canvas>
+  <div id="icons"></div>
+
+  <div id="topbar">
+    <div class="stat">得分 <b id="score">0</b></div>
+    <div class="stat">塔 <b id="towers-n">0</b></div>
+    <div class="stat">生命 <b id="alive-dot" class="dot"></b></div>
+  </div>
+
+  <div id="alerts"></div>
+  <div id="leaderboard"></div>
+
+  <div id="chat">
+    <div id="chat-log"></div>
+    <form id="chat-form" autocomplete="off">
+      <input id="chat-input" maxlength="120" placeholder="说点什么…" autocomplete="off">
+    </form>
+  </div>
+
+  <div id="zoomctl">
+    <button id="zoom-out" title="缩小">−</button>
+    <button id="center-btn" title="找到我的国王">◎</button>
+    <button id="zoom-in" title="放大">+</button>
+  </div>
+
+  <div id="controls">
+    <button id="pause-btn" title="暂停">❚❚</button>
+    <button id="speed-btn" title="游戏速度">1×</button>
+    <button id="god-btn" title="无敌模式">无敌</button>
+    <button id="help-btn">帮助</button>
+    <button id="towers-btn">塔</button>
+    <button id="units-btn">单位</button>
+    <button id="newgame-btn">新游戏</button>
+  </div>
+
+  <div id="tower-menu" class="hidden"></div>
+
+  <div id="spawn" class="hidden">
+    <h1>Kiomet<span>.com</span></h1>
+    <p class="sub">实时领地塔防 · 单机复刻</p>
+    <input id="name-input" maxlength="12" placeholder="昵称" autocomplete="off">
+    <button id="play-btn">开始</button>
+    <div id="death-reason" class="hidden"></div>
+  </div>
+
+  <div id="dialog" class="hidden">
+    <div class="card">
+      <button id="dialog-close">关闭</button>
+      <h2 id="dialog-title">帮助</h2>
+      <div id="dialog-body"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+// ---- data.js ----
+// SPDX-FileCopyrightText: 2026 Kiomet clone contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Tower / unit / combat data. Ported from Softbear, Inc.'s Kiomet (AGPL-3.0-or-later),
+// common/src/tower.rs, common/src/unit.rs and macros/src/lib.rs.
+
+const TICK_HZ = 4;
+// Towers at or next to the King are high morale: same speed, but slower to leave.
+const RULER_MARCH_MULT = 2;
+const SHIELD = 0, FIGHTER = 1, CHOPPER = 2, BOMBER = 3, TANK = 4, SOLDIER = 5,
+    SHELL = 6, EMP = 7, NUKE = 8, RULER = 9;
+
+const UNITS = [
+    { name: 'Shield', cls: 'always', speed: 'shield', damage: 1, maxOverflow: 15 },
+    { name: 'Fighter', cls: 'many', speed: 'fast', damage: 1, maxOverflow: 4 },
+    { name: 'Chopper', cls: 'many', speed: 'fast', damage: 1, maxOverflow: 2 },
+    { name: 'Bomber', cls: 'many', speed: 'fast', damage: 1, maxOverflow: 2 },
+    { name: 'Tank', cls: 'many', speed: 'slow', damage: 3, maxOverflow: 5, weight: 2 },
+    { name: 'Soldier', cls: 'many', speed: 'normal', damage: 1, maxOverflow: 10, weight: 1 },
+    { name: 'Shell', cls: 'single', speed: 'fast', damage: 3, maxOverflow: 0, range: 'short' },
+    { name: 'Emp', cls: 'single', speed: 'normal', damage: 1, maxOverflow: 0, range: 'medium' },
+    { name: 'Nuke', cls: 'single', speed: 'slow', damage: 31, maxOverflow: 0, range: 'short' },
+    { name: 'King', cls: 'single', speed: 'normal', damage: 1, maxOverflow: 0 },
+];
+
+const UNIT_ID = {};
+UNITS.forEach((u, i) => { UNIT_ID[u.name] = i; });
+const UNIT_ICONS = ['shield', 'fighter', 'chopper', 'bomber', 'tank', 'soldier',
+    'shell', 'emp', 'nuke', 'king'];
+
+const RANGE_DIST = { short: 5, medium: 8, long: 11 };
+const MAX_ROAD_LENGTH = 5;
+const rangedDistance = (u) => (UNITS[u].range ? RANGE_DIST[UNITS[u].range] * MAX_ROAD_LENGTH : null);
+const isRanged = (u) => !!(UNITS[u] && UNITS[u].range);
+const isSingleUse = (u) => isRanged(u);
+
+function speed(u, towerType) {
+    if (u === SHIELD) return (towerType == null || towerType === 'Projector') ? 'fast' : 'immobile';
+    return UNITS[u].speed;
+}
+const isMobile = (u, towerType) => speed(u, towerType) !== 'immobile';
+const canCapture = (u) => u != null && isMobile(u, null) && u !== SHIELD && !isSingleUse(u);
+
+// Field: higher = further above ground. Iterated Air then Surface, like the original.
+function field(u, overflow, inForce, anyAir) {
+    switch (u) {
+        case SHIELD: return anyAir ? 1 : 0;
+        case BOMBER: case CHOPPER: case FIGHTER: case SHELL: case EMP: case NUKE:
+            return (overflow || inForce) ? 1 : 0;
+        default: return 0;
+    }
+}
+
+function damage(u, uField, eField) {
+    switch (u) {
+        case TANK: return 3;
+        case FIGHTER: return uField === 1 ? 3 : 1;
+        case BOMBER: return (uField === 1 && eField === 0) ? 5 : 1;
+        case CHOPPER: return uField === 1 ? 3 : 1;
+        case NUKE: return 31;
+        case SHELL: return 3;
+        default: return 1;
+    }
+}
+const INFINITE_DAMAGE = 31;
+const finiteDamage = (d) => (d === INFINITE_DAMAGE ? 2147483647 : d);
+const groundDamage = (u) => damage(u, field(u, false, true, false), 0);
+
+const EMP_TICKS = 60 * TICK_HZ;
+
+// 27 towers. `pre` = [downgrade, [delaySeconds, [type, count]...]]
+const T = (name, o) => ({ name, cap: {}, gen: {}, pre: [], score: 1, sensor: 12, spawnable: false, ...o });
+
+const TOWERS = [
+    T('Airfield', {
+        cap: { Fighter: 4, Bomber: 4, Soldier: 4, Tank: 3, Shield: 10 },
+        gen: { Bomber: 30 }, spawnable: true,
+        pre: ['Runway', [20, ['Factory', 2], ['Radar', 1]]],
+    }),
+    T('Armory', {
+        cap: { Soldier: 4, Tank: 5, Shield: 15 }, gen: { Tank: 15 }, spawnable: true,
+        pre: ['Barracks', [25, ['Factory', 1], ['Mine', 1]]],
+    }),
+    T('Artillery', {
+        cap: { Shell: 3, Shield: 20 }, gen: { Shell: 15 },
+        pre: ['Bunker', [40, ['Refinery', 2], ['Radar', 3]]],
+    }),
+    T('Barracks', {
+        cap: { Soldier: 12, Tank: 2, Shield: 10 }, gen: { Soldier: 6 }, spawnable: true,
+    }),
+    T('Bunker', {
+        cap: { Soldier: 6, Shield: 40 }, spawnable: true,
+        pre: ['Cliff', [30, ['Headquarters', 1], ['Ews', 1]]],
+    }),
+    T('Centrifuge', {
+        cap: { Soldier: 4, Tank: 2, Shield: 15 },
+        pre: ['Generator', [30, ['Mine', 3]]],
+    }),
+    T('City', {
+        cap: { Fighter: 2, Soldier: 6, Tank: 2, Shield: 15 }, score: 5,
+        pre: ['Town', [30, ['Quarry', 2], ['Reactor', 1], ['Town', 3]]],
+    }),
+    T('Cliff', { cap: { Soldier: 4, Tank: 2, Shield: 30 }, spawnable: true }),
+    T('Ews', {
+        cap: { Soldier: 4, Tank: 2, Shield: 15 }, sensor: 20,
+        pre: ['Radar', [30, ['Generator', 2]]],
+    }),
+    T('Factory', { cap: { Soldier: 4, Tank: 2, Shield: 10 }, score: 2 }),
+    T('Generator', { cap: { Soldier: 4, Tank: 2, Shield: 10 } }),
+    T('Headquarters', {
+        cap: { Soldier: 8, Tank: 2, Shield: 40 },
+        pre: ['Village', [20, ['Radar', 1]]],
+    }),
+    T('Helipad', {
+        cap: { Chopper: 3, Soldier: 4, Tank: 2, Shield: 15 }, gen: { Chopper: 30 }, spawnable: true,
+        pre: ['Airfield', [20, ['Armory', 2], ['Factory', 3]]],
+    }),
+    T('Launcher', {
+        cap: { Emp: 1, Shield: 15 }, gen: { Emp: 80 },
+        pre: ['Rocket', [30, ['Airfield', 2]]],
+    }),
+    T('Mine', { cap: { Soldier: 4, Tank: 2, Shield: 15 }, score: 2 }),
+    T('Projector', {
+        cap: { Soldier: 4, Tank: 2, Shield: 10 }, gen: { Shield: 3 },
+        pre: ['Centrifuge', [20, ['Rampart', 2], ['Reactor', 2]]],
+    }),
+    T('Quarry', {
+        cap: { Soldier: 6, Tank: 2, Shield: 10 }, score: 2,
+        pre: ['Cliff', [20, ['Village', 1]]],
+    }),
+    T('Radar', { cap: { Soldier: 4, Tank: 2, Shield: 10 }, sensor: 16 }),
+    T('Rampart', {
+        cap: { Soldier: 8, Shield: 45 }, gen: { Shield: 3 },
+        pre: ['Cliff', [20, ['Barracks', 2]]],
+    }),
+    T('Reactor', {
+        cap: { Soldier: 4, Tank: 2, Shield: 10 },
+        pre: ['Generator', [40, ['Centrifuge', 1]]],
+    }),
+    T('Refinery', {
+        cap: { Soldier: 4, Tank: 2, Shield: 5 }, score: 3,
+        pre: ['Factory', [20, ['Generator', 3], ['Cliff', 1]]],
+    }),
+    T('Rocket', {
+        cap: { Soldier: 4, Tank: 2, Shield: 15 },
+        pre: ['Radar', [20, ['Refinery', 1]]],
+    }),
+    T('Runway', {
+        cap: { Fighter: 4, Soldier: 4, Tank: 2, Shield: 5 }, gen: { Fighter: 30 }, spawnable: true,
+    }),
+    T('Satellite', {
+        cap: { Soldier: 4, Tank: 2, Shield: 15 }, sensor: 30,
+        pre: ['Ews', [40, ['Rocket', 2], ['Generator', 5]]],
+    }),
+    T('Silo', {
+        cap: { Nuke: 1, Soldier: 4, Tank: 1, Shield: 20 }, gen: { Nuke: 120 },
+        pre: ['Quarry', [40, ['Centrifuge', 2]]],
+    }),
+    T('Town', {
+        cap: { Fighter: 1, Soldier: 4, Tank: 1, Shield: 10 }, score: 2,
+        pre: ['Village', [20, ['Generator', 1], ['Village', 3]]],
+    }),
+    T('Village', { cap: { Soldier: 4, Shield: 5 } }),
+];
+
+// Index by name, and precompute per-tower lookups.
+const TOWER = {};
+TOWERS.forEach((t, i) => { t.id = i; TOWER[t.name] = t; });
+const TOWER_NAMES = TOWERS.map((t) => t.name);
+
+for (const t of TOWERS) {
+    // The downgrade is the first prerequisite kind (a mid-tier one like Bunker is fine).
+    t.down = t.pre.length ? t.pre[0] : null;
+    t.delay = t.pre.length ? t.pre[1][0] : 0;
+    t.prereqs = t.pre.length ? t.pre[1].slice(1) : [];
+    t.upgrades = [];
+    t.basis = t.name;
+    t.rangedDist = Object.keys(t.gen)
+        .map((u) => { const id = UNIT_ID[u]; return id == null ? null : rangedDistance(id); })
+        .find((d) => d != null) ?? null;
+    t.rawCap = (u) => t.cap[UNITS[u].name] || 0;
+    t.genPeriod = (u) => {
+        const s = t.gen[UNITS[u].name];
+        return s == null ? null : s * TICK_HZ;
+    };
+    t.genUnitId = (u) => UNIT_ID[u];
+    t.generatesMobile = UNITS.some((_, u) => isMobile(u, t.name) && t.genPeriod(u) != null);
+    t.rangedDamage = (d) => (t.name === 'Bunker' ? Math.floor(d / 3)
+        : t.name === 'Headquarters' ? Math.floor(d * 2 / 3) : d);
+    t.maxRangedDamage = () => t.rangedDamage(INFINITE_DAMAGE);
+}
+
+// Tower level (invariant: higher than downgrade and prerequisites).
+for (let pass = 0; pass < 8; pass++) {
+    for (const t of TOWERS) {
+        let m = 0;
+        for (const p of t.prereqs) m = Math.max(m, TOWER[p[0]].level || 0);
+        if (t.down) m = Math.max(m, TOWER[t.down].level || 0);
+        t.level = t.prereqs.length || t.down ? m + 1 : 0;
+    }
+}
+// The downgrade chain, resolved after every tower knows its own downgrade.
+for (const t of TOWERS) {
+    for (let guard = 0; guard < 10; guard++) {
+        const d = TOWER[t.basis].down;
+        if (!d) break;
+        t.basis = d;
+    }
+}
+
+// A tower can be built straight from its base kind (Kiomet shows e.g. Cliff -> Quarry).
+for (const t of TOWERS) {
+    if (t.down) {
+        const owner = TOWER[t.down];
+        if (!owner.upgrades.includes(t.name)) owner.upgrades.push(t.name);
+    }
+}
+const SPAWNABLE = TOWERS.filter((t) => t.pre.length === 0);
+
+function meetsPrereqs(name, counts) {
+    return TOWER[name].prereqs.every(([p, n]) => (counts[p] || 0) >= n);
+}
+
+// "The eight basic kinds are scattered across the map."
+function randomSpawnableType(hash) {
+    return SPAWNABLE[hash % SPAWNABLE.length].name;
+}
+
+// ---- geom.js ----
+// SPDX-FileCopyrightText: 2026 Kiomet clone contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// World geometry: tower ids, roads, connectivity. Ported from Kiomet
+// common/src/tower/id.rs and common/src/tower/connectivity.rs.
+
+
+const WORLD_SIZE = 512;
+const CENTER = { x: 256, y: 256 };
+const MAX_ROAD_SQ = (MAX_ROAD_LENGTH + 1) ** 2 - 1;
+
+const FNV_OFFSET = 2166136261 >>> 0;
+const FNV_PRIME = 16777619;
+
+function fnv(seed, bytes) {
+    let h = seed >>> 0;
+    for (const b of bytes) {
+        h = Math.imul(h, FNV_PRIME) >>> 0;
+        h = (h ^ b) >>> 0;
+    }
+    return h;
+}
+const condense16 = (h) => ((h & 0xffff) ^ (h >>> 16)) >>> 0;
+const condense8 = (h) => ((h & 0xff) ^ (h >>> 8)) & 0xff;
+
+const u16bytes = (v) => [v & 0xff, (v >>> 8) & 0xff];
+
+// Deterministic per-cell jitter, 1..4 in each axis.
+const offsetCache = new Map();
+function offset(x, y) {
+    const k = (y << 9) | x;
+    let v = offsetCache.get(k);
+    if (v === undefined) {
+        const h = condense8(condense16(fnv(FNV_OFFSET, [...u16bytes(x), ...u16bytes(y)])));
+        v = [(h & 3) + 1, ((h >>> 4) & 3) + 1];
+        offsetCache.set(k, v);
+    }
+    return v;
+}
+
+function integerPosition(x, y) {
+    const o = offset(x, y);
+    return [x * 5 + o[0], y * 5 + o[1]];
+}
+const position = (id) => integerPosition(id.x, id.y);
+
+function towerTypeAt(x, y) {
+    let h = FNV_OFFSET;
+    h = fnv(h, u16bytes((x + 31415) & 0xffff));
+    h = fnv(h, u16bytes((y + 31415) & 0xffff));
+    return randomSpawnableType(condense8(condense16(condense16(h))));
+}
+
+const NB = [
+    [0, 1, 'N'], [1, 1, 'NE'], [1, 0, 'E'], [1, -1, 'SE'],
+    [0, -1, 'S'], [-1, -1, 'SW'], [-1, 0, 'W'], [-1, 1, 'NW'],
+];
+
+function areNeighbors(a, b) {
+    if (a.x === b.x && a.y === b.y) return false;
+    if (b.x < 0 || b.y < 0 || b.x >= WORLD_SIZE || b.y >= WORLD_SIZE) return false;
+    const pa = integerPosition(a.x, a.y), pb = integerPosition(b.x, b.y);
+    const dx = pa[0] - pb[0], dy = pa[1] - pb[1];
+    const d2 = dx * dx + dy * dy;
+    if (d2 > MAX_ROAD_SQ) return false;
+    if (b.x !== a.x && b.y !== a.y) {
+        const o1 = integerPosition(a.x, b.y), o2 = integerPosition(b.x, a.y);
+        const ox = o1[0] - o2[0], oy = o1[1] - o2[1];
+        if (ox * ox + oy * oy <= d2) return false; // intersections with a shorter road
+    }
+    return true;
+}
+
+// Road connectivity for a cell as an 8-bit mask + ordered list of neighbor ids.
+const neighborCache = new Map();
+function neighbors(x, y) {
+    const k = (y << 9) | x;
+    let v = neighborCache.get(k);
+    if (v === undefined) {
+        v = [];
+        for (const [dx, dy] of NB) {
+            const b = { x: x + dx, y: y + dy };
+            if (b.x < 0 || b.y < 0 || b.x >= WORLD_SIZE || b.y >= WORLD_SIZE) continue;
+            if (areNeighbors({ x, y }, b)) v.push(b);
+        }
+        neighborCache.set(k, v);
+    }
+    return v;
+}
+
+function distanceSquared(a, b) {
+    const pa = integerPosition(a.x, a.y), pb = integerPosition(b.x, b.y);
+    const dx = pa[0] - pb[0], dy = pa[1] - pb[1];
+    return dx * dx + dy * dy;
+}
+const distance = (a, b) => Math.floor(Math.sqrt(distanceSquared(a, b)));
+
+// Breadth-first parent pointers towards the world center (same construction order as the
+// original's connectivity table: center first, then BFS over *all* 8 neighbours).
+let PARENT = null;
+function buildConnectivity() {
+    PARENT = new Map();
+    const key = (id) => id.y * WORLD_SIZE + id.x;
+    const c = { x: CENTER.x, y: CENTER.y };
+    PARENT.set(key(c), c); // the center points at itself
+    const queue = [c];
+    for (let head = 0; head < queue.length; head++) {
+        const p = queue[head];
+        for (const n of allNeighbors(p)) {
+            const k = key(n);
+            if (PARENT.has(k)) continue;
+            PARENT.set(k, p);
+            queue.push(n);
+        }
+        if (queue.length > WORLD_SIZE * WORLD_SIZE) break;
+    }
+    return PARENT.size;
+}
+
+function allNeighbors(p) {
+    const out = [];
+    for (const [dx, dy] of NB) {
+        const b = { x: p.x + dx, y: p.y + dy };
+        if (b.x < 0 || b.y < 0 || b.x >= WORLD_SIZE || b.y >= WORLD_SIZE) continue;
+        out.push(b);
+    }
+    return out;
+}
+
+const connectivity = (id) => PARENT.get(id.y * WORLD_SIZE + id.x);
+const isSpawnablePosition = (id) => {
+    if (id.x < 1 || id.y < 1 || id.x >= WORLD_SIZE - 1 || id.y >= WORLD_SIZE - 1) return false;
+    return connectivity(id) !== undefined;
+};
+
+// ---- rules.js ----
+// SPDX-FileCopyrightText: 2026 Kiomet clone contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Unit containers, combat and forces. Ported from Kiomet common/src/units.rs,
+// common/src/combatants.rs and common/src/force.rs.
+
+
+
+// A Units container: shields + (five "many" counts) XOR (one "single" unit).
+class Units {
+    constructor() { this.shield = 0; this.many = [0, 0, 0, 0, 0]; this.single = null; this.singleCount = 0; }
+
+    clone() {
+        const u = new Units();
+        u.shield = this.shield;
+        u.many = this.many.slice();
+        u.single = this.single; u.singleCount = this.singleCount;
+        return u;
+    }
+    isEmpty() { return this.shield === 0 && this.single === null && this.many.every((c) => c === 0); }
+
+    get(u) {
+        if (u === SHIELD) return this.shield;
+        if (UNITS[u] === undefined) return 0;
+        if (UNITS[u].cls === 'many') return this.single !== null ? 0 : this.many[u - FIGHTER];
+        return this.single === u ? this.singleCount : 0;
+    }
+
+    counts() {
+        const out = [];
+        if (this.shield) out.push([SHIELD, this.shield]);
+        if (this.single !== null) { if (this.singleCount) out.push([this.single, this.singleCount]); }
+        else for (let i = 0; i < 5; i++) if (this.many[i]) out.push([i + FIGHTER, this.many[i]]);
+        return out;
+    }
+
+    hasRuler() { return this.single === RULER; }
+    len() { let n = 0; for (const [, c] of this.counts()) n += c; return n; }
+    isAlive() { return this.counts().some(([u]) => !isSingleUse(u) && u !== SHIELD); }
+    isMany() { return this.single === null; }
+
+    capacity(u, towerType) {
+        // The world's own ruler slot: every tower type has capacity 1 for him.
+        if (u === RULER) return towerType == null ? 255 : 1;
+        const base = towerType == null ? 255
+            : TOWER[towerType].rawCap(u) + (u === SHIELD && this.hasRuler() ? 10 : 0);
+        return Math.min(255, base);
+    }
+
+    spaceRemaining(u, towerType, overflow) {
+        const cls = UNITS[u].cls;
+        if (cls === 'many' && this.single !== null) return 0;
+        if (cls === 'single' && this.single !== null && this.single > u) return 0;
+        return Math.max(0, this.capacity(u, towerType) + (overflow ? UNITS[u].maxOverflow : 0) - this.get(u));
+    }
+
+    add(u, count, towerType = null, overflow = true) {
+        const added = Math.min(count, this.spaceRemaining(u, towerType, overflow));
+        if (added <= 0) return 0;
+        const cls = UNITS[u].cls;
+        if (cls === 'always') this.shield += added;
+        else if (cls === 'many') {
+            if (this.single !== null) return 0;
+            this.many[u - FIGHTER] += added;
+        } else if (this.single === u) this.singleCount += added;
+        else {
+            this.many = [0, 0, 0, 0, 0];
+            this.single = u; this.singleCount = added;
+        }
+        return added;
+    }
+
+    subtract(u, count) {
+        const sub = Math.min(count, this.get(u));
+        if (sub <= 0) return 0;
+        if (u === SHIELD) this.shield -= sub;
+        else if (UNITS[u].cls === 'many') this.many[u - FIGHTER] -= sub;
+        else {
+            this.singleCount -= sub;
+            if (this.singleCount === 0) { this.single = null; this.many = [0, 0, 0, 0, 0]; }
+        }
+        return sub;
+    }
+
+    addUnitsToTower(other, towerType, hasPlayer) {
+        for (const [u, c] of other.counts()) {
+            if (isSingleUse(u)) continue;
+            this.add(u, c, towerType, hasPlayer);
+        }
+    }
+
+    reconcile(towerType, hasPlayer) {
+        const old = this.clone();
+        this.shield = 0; this.many = [0, 0, 0, 0, 0]; this.single = null; this.singleCount = 0;
+        this.addUnitsToTower(old, towerType, hasPlayer);
+    }
+
+    forceUnits(towerType) {
+        const out = new Units();
+        for (const [u, c] of this.counts()) if (isMobile(u, towerType)) out.add(u, c);
+        return out;
+    }
+
+    maxEdgeDistance() {
+        let acc = null;
+        for (const [u] of this.counts()) acc = isRanged(u) ? rangedDistanceOf(u) : null;
+        return acc;
+    }
+
+    forceGroundDamage() {
+        let total = 0;
+        for (const [u, c] of this.counts()) total += finiteDamage(damage(u, field(u, false, true, false), 0)) * c;
+        return total;
+    }
+}
+
+const rangedDistanceOf = (u) => ({ short: 5, medium: 8, long: 11 }[UNITS[u].range]) * 5;
+
+const ATTACKER = 1, DEFENDER = 2;
+
+class Combatants {
+    constructor(units, towerType = null) { this.units = units; this.towerType = towerType; }
+}
+
+// Fight two combatants in place. Returns ATTACKER, DEFENDER or 0 (stalemate).
+//
+// Mirrors Combatants::fight: the air field resolves first, then the surface; at zero damage the
+// defender spends first, otherwise whoever is "ahead" spends a unit to cancel the damage.
+function fight(A, D, onInfo) {
+    if (A.towerType != null) D.units.subtract(SHIELD, 1e9);
+    if (D.towerType != null) A.units.subtract(SHIELD, 1e9);
+
+    let dmg = 0;
+    let lastA = -1, lastD = -1;
+    const flags = { emp: false, nuke: false, shell: false };
+    let boundCheck = false;
+
+    // Units not yet committed (the currently "in hand" unit is excluded).
+    const unusedUnits = (c, last) => {
+        const out = [];
+        for (const [u, count] of c.units.counts()) {
+            const n = count - (last === u && !isSingleUse(u) ? 1 : 0);
+            if (n > 0) out.push([u, n]);
+        }
+        return out;
+    };
+
+    const fire = (unit, isAtt) => {
+        if (flags[unit === EMP ? 'emp' : unit === NUKE ? 'nuke' : 'shell']) return;
+        flags[unit === EMP ? 'emp' : unit === NUKE ? 'nuke' : 'shell'] = true;
+        if (onInfo) onInfo({ type: unit === EMP ? 'emp' : unit === NUKE ? 'nuke' : 'shell', side: isAtt ? ATTACKER : DEFENDER });
+    };
+
+    // Commit `unit` for one side; returns the new "in hand" unit.
+    const commit = (me, myLast, enemyLast, unit) => {
+        boundCheck = true;
+        const isAtt = me === A;
+        if (unit >= 0 && isSingleUse(unit)) {
+            fire(unit, isAtt);
+            me.units.subtract(unit, 1);
+        }
+        if (myLast >= 0 && !isSingleUse(myLast)) {
+            if (myLast === RULER && onInfo) {
+                onInfo({ type: 'ruler', side: isAtt ? ATTACKER : DEFENDER, by: enemyLast });
+            }
+            me.units.subtract(myLast, 1);
+        }
+        return unit >= 0 ? unit : myLast;
+    };
+
+    const damageAgainst = (unit, uField, enemy, eField, prev) => {
+        let d = damage(unit, uField, eField);
+        if (isRanged(unit) && enemy.towerType != null) d = TOWER[enemy.towerType].rangedDamage(d);
+        let fin = finiteDamage(d);
+        const dir = enemy === A ? -1 : 1;
+        if (prev * -dir > 1073741823) fin = Math.min(fin, 1000);
+        return fin * dir;
+    };
+
+    for (const fld of [1, 0]) {
+        // `killedNukes < 2` lets both sides keep spending through a nuclear exchange.
+        let killedNukes = 0;
+        const pick = (me, last, anyAir) => {
+            const t = me.towerType;
+            for (const [u, c] of unusedUnits(me, last)) {
+                const overflow = t != null && c > me.units.capacity(u, t);
+                const uf = field(u, overflow, t == null, anyAir);
+                if (uf >= fld) return [u, uf];
+            }
+            return null;
+        };
+        const nextUnit = (me, last) => {
+            const n = pick(me, last, false);
+            if (!n) return null;
+            return fld === 1 ? pick(me, last, true) : n;
+        };
+
+        for (let guard = 0; guard < 4000 && killedNukes < 2; guard++) {
+            let na = null, nd = null;
+            if (dmg < 0) na = nextUnit(A, lastA);
+            else if (dmg > 0) nd = nextUnit(D, lastD);
+            else {
+                const a = nextUnit(A, lastA), d = nextUnit(D, lastD);
+                if (d) nd = d; else na = a;
+            }
+            if (na) {
+                if (na[0] === NUKE) killedNukes += 1; // count
+                lastA = commit(A, lastA, lastD, na[0]);
+                dmg += damageAgainst(na[0], na[1], D, fld, dmg);
+            } else if (nd) {
+                if (nd[0] === NUKE) killedNukes += 1; // count
+                lastD = commit(D, lastD, lastA, nd[0]);
+                dmg += damageAgainst(nd[0], nd[1], A, fld, dmg);
+            } else break;
+        }
+    }
+
+    // Spend one last unit so exactly one side ends up empty.
+    const first = (c, last) => { const u = unusedUnits(c, last); return u.length ? u[0][0] : -1; };
+    const na = first(A, lastA), nd = first(D, lastD);
+    const order = nd >= 0 ? [ATTACKER, DEFENDER] : [DEFENDER, ATTACKER];
+    for (const side of order) {
+        if (side === ATTACKER && dmg <= 0 && na >= 0) {
+            dmg += damageAgainst(na, 0, D, 0, dmg);
+            lastA = commit(A, lastA, lastD, na);
+        } else if (side === DEFENDER && dmg >= 0 && nd >= 0) {
+            dmg += damageAgainst(nd, 0, A, 0, dmg);
+            lastD = commit(D, lastD, lastA, nd);
+        }
+    }
+
+    // A shot that the other side could not answer keeps landing: this is what makes a nuke
+    // (or a hopeless last soldier) clear out everything it can reach.
+    for (let guard = 0; guard < 64; guard++) {
+        if (dmg > 0 && lastA >= 0 && !isSingleUse(lastA)) {
+            const a = unusedUnits(A, lastA);
+            if (a.length) {
+                dmg += damageAgainst(a[0][0], 0, D, 0, dmg);
+                lastA = commit(A, lastA, lastD, a[0][0]);
+                continue;
+            }
+        }
+        if (dmg < 0 && lastD >= 0 && !isSingleUse(lastD)) {
+            const d = unusedUnits(D, lastD);
+            if (d.length) {
+                dmg += damageAgainst(d[0][0], 0, A, 0, dmg);
+                lastD = commit(D, lastD, lastA, d[0][0]);
+                continue;
+            }
+        }
+        break;
+    }
+
+    if (A.units.isAlive() || (A.towerType != null && dmg >= 0)) return ATTACKER;
+    if (D.units.isAlive() || (D.towerType != null && dmg <= 0)) return DEFENDER;
+    return 0;
+}
+
+// ---- Forces ----
+
+const FORCE_FUEL = 150;
+const RANK = { immobile: 0, slow: 1, normal: 2, fast: 3 };
+
+function forceSpeed(units) {
+    const choppers = units.get(CHOPPER);
+    if (choppers !== 0) {
+        let weight = 0;
+        for (const [u, c] of units.counts()) weight += (UNITS[u].weight || 0) * c;
+        const maxWeight = choppers * 4;
+        if (weight <= maxWeight) return 'fast';
+        let slowWeight = 0;
+        for (const [u, c] of units.counts()) {
+            if (RANK[speed(u, null)] < RANK.normal) slowWeight += (UNITS[u].weight || 0) * c;
+        }
+        return slowWeight <= maxWeight ? 'normal' : 'slow';
+    }
+    let worst = 3;
+    for (const [u] of units.counts()) worst = Math.min(worst, RANK[speed(u, null)]);
+    return ['immobile', 'slow', 'normal', 'fast'][worst];
+}
+
+const progressPerTick = (units) => ({ slow: 1, normal: 2, fast: 3 }[forceSpeed(units)] || 0);
+
+function progressRequired(src, dst) {
+    return Math.min(255, Math.floor((distance(src, dst) * 180) / 5 / 2));
+}
+
+let nextForceId = 1;
+
+class Force {
+    constructor(owner, units, path) {
+        this.id = nextForceId++;
+        this.owner = owner;               // player index, or null for zombies
+        this.units = units;
+        this.path = path.slice();         // forward order: source ... destination
+        this.idx = 0;
+        this.progress = 0;
+        this.fuel = FORCE_FUEL;
+        this.slow = 1;                    // multiplier applied to the first leg only
+        this.parked = false;              // arrived (or halted): stop at the current destination
+        this.reported = false;            // the tower has not yet handled this arrival
+    }
+    get source() { return this.path[Math.min(this.idx, this.path.length - 1)]; }
+    get destination() { return this.path[Math.min(this.idx + 1, this.path.length - 1)]; }
+    // Forces leaving the King's tower march at half the usual pace.
+    get required() {
+        const base = progressRequired(this.source, this.destination);
+        return this.slow ? Math.min(255, base * this.slow) : base;
+    }
+    get isLast() { return this.idx >= this.path.length - 2; }
+    // Where we would land next, whether or not we are already at the final destination.
+    get nextDestination() { return this.path[Math.min(this.idx + 1, this.path.length - 1)]; }
+    // Advance; returns true when it arrives at the current destination.
+    // Advance one tick. Only the *final* leg counts as an arrival: while a force travels it is
+    // also the live copy of its supply line, and the stops in between are checkpoints.
+    tick() {
+        // A parked force reports its arrival exactly once; the tower then decides what happens
+        // (continuing along a supply line, or unloading into a friend).
+        if (this.parked) {
+            if (this.reported) return false;
+            this.reported = true;
+            return true;
+        }
+        this.progress += progressPerTick(this.units);
+        if (this.progress < this.required) return false;
+        this.progress = 0;
+        this.idx += 1;
+        this.slow = 1;                     // the penalty belongs to the departure
+        if (!this.isLast) {
+            if (this.units.isMany()) this.fuel -= 1;
+            return false;
+        }
+        this.parked = true;                // arrived: stay put until the tower moves it on
+        return true;
+    }
+    advance() {
+        this.progress += progressPerTick(this.units);
+        return this.progress >= this.required;
+    }
+    halt() { this.path = this.path.slice(0, this.idx + 2); }
+    position(t = 0) {
+        if (!this.source || !this.destination) return [0, 0];
+        const a = integerPosition(this.source.x, this.source.y);
+        const b = integerPosition(this.destination.x, this.destination.y);
+        const f = Math.min(1, (this.progress + t * progressPerTick(this.units)) / Math.max(1, this.required));
+        return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+    }
+}
+
+function makeForce(owner, units, path) { return new Force(owner, units, path); }
+
+// ---- glyphs.js ----
+// Tower and unit glyphs, taken from Kiomet's own /towers and /units pages
+// (AGPL-3.0-or-later, Softbear, Inc.). Drawn as SVG so they stay crisp at any zoom.
+const TOWER_SVG = {"Airfield": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.5 0.2 L 0.5 0.2 L 0.5 -0.2 L -0.5 -0.2 ZM -0.39285716 0.01 L -0.39285716 -0.01 L -0.3214286 -0.01 L -0.3214286 0.01 ZM -0.24999999 0.01 L -0.24999999 -0.01 L -0.1785714 -0.01 L -0.1785714 0.01 ZM -0.10714285 0.01 L -0.10714285 -0.01 L -0.035714276 -0.01 L -0.035714276 0.01 ZM 0.03571431 0.01 L 0.03571431 -0.01 L 0.10714288 -0.01 L 0.10714288 0.01 ZM 0.17857145 0.01 L 0.17857145 -0.01 L 0.25000003 -0.01 L 0.25000003 0.01 ZM 0.32142857 0.01 L 0.32142857 -0.01 L 0.39285713 -0.01 L 0.39285713 0.01 Z\"/></svg>", "Armory": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.3 L -0.4 -0.100000024 Q 0 -0.3 0.39999998 -0.100000024L 0.39999998 0.3 L 0.100000024 0.3 L 0.100000024 0.099999994 L -0.099999994 0.099999994 L -0.099999994 0.3 Z\"/></svg>", "Artillery": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.43 0.21000001 L -0.29000002 0.13999999 L -0.21999997 -0.06999999 L -0.35999995 -0.034999967 L -0.39499998 -0.14000005 L 0.024999976 -0.27999997 L 0.060000062 -0.17500001 L -0.11500001 -0.10499996 Q 0.09500003 -0.06999999 0.27000004 0.21000001ZM 0.04949999 -0.22750002 L 0.42749995 -0.35000002 Z\"/></svg>", "Barracks": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.19999999 L -0.4 -0 C -0.4 -0.25 -0.13333333 -0.25 -0.13333333 -0C -0.13333333 -0.25 0.13333338 -0.25 0.13333338 -0C 0.13333338 -0.25 0.39999998 -0.25 0.39999998 -0L 0.39999998 0.19999999 Z\"/></svg>", "Bunker": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.19999999 Q 0 -0.39999998 0.39999998 0.19999999L 0.100000024 0.19999999 Q 0 -0 -0.099999994 0.19999999Z\"/></svg>", "Centrifuge": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.3 0.3 L -0.3 0.19999999 L -0.19999999 0.099999994 L -0.19999999 -0.3 L -0.099999994 -0.3 L -0.099999994 -0.39999998 L 0.100000024 -0.39999998 L 0.100000024 -0.3 L 0.19999999 -0.3 L 0.19999999 0.099999994 L 0.3 0.19999999 L 0.3 0.3 Z\"/></svg>", "City": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.4 L -0.4 0.3 L -0.3 0.3 L -0.3 -0.19999999 L 0 -0.3 L 0 -0.100000024 L 0.3 -0.100000024 L 0.3 0.3 L 0.39999998 0.3 L 0.39999998 0.4 Z\"/></svg>", "Cliff": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.3 L -0.4 -0.100000024 L -0.3 -0.100000024 L -0.099999994 -0.050000012 L 0.100000024 -0.14999998 L 0.3 -0.100000024 L 0.39999998 -0.100000024 L 0.39999998 0.3 Z\"/></svg>", "Ews": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.3 0.3 L -0.3 0.099999994 L -0.099999994 0.099999994 L -0.19999999 -0 L -0.19999999 -0.19999999 L -0.099999994 -0.3 L 0.100000024 -0.3 L 0.19999999 -0.19999999 L 0.19999999 -0 L 0.100000024 0.099999994 L 0.3 0.099999994 L 0.3 0.3 Z\"/></svg>", "Factory": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.19999999 L -0.4 -0.04000002 L -0.13333333 -0.19999999 L -0.13333333 -0.050000012 L 0.13333338 -0.19999999 L 0.13333338 -0.050000012 L 0.39999998 -0.19999999 L 0.39999998 0.19999999 Z\"/></svg>", "Generator": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.3 L -0.4 -0.35000002 L -0.3 -0.35000002 L -0.3 0.099999994 L -0.19999999 0.099999994 L -0.19999999 -0.35000002 L -0.099999994 -0.35000002 L -0.099999994 0.099999994 L 0 0.099999994 L 0 -0.100000024 L 0.39999998 -0.100000024 L 0.39999998 0.3 Z\"/></svg>", "Headquarters": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.19999999 L -0.4 -0 L -0.19999999 -0 L -0.19999999 -0.19999999 L 0.19999999 -0.19999999 L 0.19999999 -0 L 0.39999998 -0 L 0.39999998 0.19999999 Z\"/></svg>", "Helipad": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.3 0.099999994 L -0.3 -0.100000024 Q -0.3 -0.3 -0.099999994 -0.3L 0.100000024 -0.3 Q 0.3 -0.3 0.3 -0.100000024L 0.3 0.099999994 Q 0.3 0.3 0.100000024 0.3L -0.099999994 0.3 Q -0.3 0.3 -0.3 0.099999994ZM -0.15 0.19999999 L -0.15 -0.19999999 L -0.050000012 -0.19999999 L -0.050000012 -0.050000012 L 0.050000012 -0.050000012 L 0.050000012 -0.19999999 L 0.14999998 -0.19999999 L 0.14999998 0.19999999 L 0.050000012 0.19999999 L 0.050000012 0.050000012 L -0.050000012 0.050000012 L -0.050000012 0.19999999 Z\"/></svg>", "Launcher": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.4 L -0.4 0.3 L -0.15 0.3 L -0.15 0.15 L -0.25 0.25 L -0.275 0.225 L -0.3 0.225 L -0.375 0.15 L -0.375 0.125 L -0.4 0.099999994 L 0.100000024 -0.39999998 L 0.125 -0.375 Q 0.35000002 -0.5 0.22500002 -0.27499998L 0.25 -0.25 L 0.07499999 -0.07499999 L 0.25 0.3 L 0.39999998 0.3 L 0.39999998 0.4 ZM -0.050000012 0.25 L 0.125 0.25 L 0 -0 L -0.050000012 0.050000012 Z\"/></svg>", "Mine": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.3 L -0.099999994 -0.100000024 L 0 -0 L 0.19999999 -0.19999999 L 0.39999998 0.3 L 0.100000024 0.3 L 0.100000024 0.19999999 Q 0 0.099999994 -0.099999994 0.19999999L -0.099999994 0.3 Z\"/></svg>", "Projector": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.25 0.35 L -0.25 0.19999999 L -0.15 0.099999994 L -0.15 0.050000012 Q -0.19999999 -0 -0.19999999 -0.100000024Q -0.19999999 -0.3 0 -0.3Q 0.19999999 -0.3 0.19999999 -0.100000024Q 0.19999999 -0 0.14999998 0.050000012L 0.14999998 0.099999994 L 0.25 0.19999999 L 0.25 0.35 ZM -0.050000012 0.15 L 0.050000012 0.15 L 0.050000012 -0 L -0.050000012 -0 Z\"/></svg>", "Quarry": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.3 L -0.4 -0.100000024 L -0.3 -0.100000024 L -0.19999999 0.099999994 L -0.099999994 0.099999994 L 0 0.19999999 L 0.100000024 0.19999999 L 0.3 -0.100000024 L 0.39999998 -0.100000024 L 0.39999998 0.3 Z\"/></svg>", "Radar": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.3 L -0.4 0.19999999 L -0.19999999 0.19999999 L 0 -0.100000024 Q -0.099999994 -0.3 -0.099999994 -0.39999998L 0.39999998 0.099999994 Q 0.3 0.099999994 0.100000024 -0L 0.19999999 0.19999999 L 0.39999998 0.19999999 L 0.39999998 0.3 Z\"/></svg>", "Rampart": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.3 L -0.4 -0.14999998 L -0.3 -0.14999998 L -0.3 -0.100000024 L -0.19999999 -0.100000024 L -0.19999999 -0.14999998 L -0.099999994 -0.14999998 L -0.099999994 -0.100000024 L 0 -0.100000024 L 0 -0.14999998 L 0.100000024 -0.14999998 L 0.100000024 -0.100000024 L 0.19999999 -0.100000024 L 0.19999999 -0.19999999 L 0.3 -0.25 L 0.39999998 -0.19999999 L 0.39999998 0.3 Z\"/></svg>", "Reactor": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.4 L -0.4 0.19999999 L -0.3 0.19999999 Q -0.15 -0.100000024 -0.3 -0.39999998L 0.3 -0.39999998 Q 0.14999998 -0.100000024 0.3 0.19999999L 0.39999998 0.19999999 L 0.39999998 0.4 Z\"/></svg>", "Refinery": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.3 L -0.4 0.19999999 L -0.3 0.19999999 L -0.3 -0 L -0.325 -0 L -0.325 -0.050000012 L -0.3 -0.050000012 L -0.3 -0.14999998 Q -0.19999999 -0.19999999 -0.099999994 -0.14999998L -0.099999994 -0.050000012 L -0.07499999 -0.050000012 L -0.07499999 -0 L -0.099999994 -0 L -0.099999994 0.099999994 L 0.100000024 0.099999994 L 0.100000024 0.050000012 L 0.19999999 -0.25 L 0.3 0.050000012 L 0.3 0.19999999 L 0.39999998 0.19999999 L 0.39999998 0.3 Z\"/></svg>", "Rocket": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.4 L -0.4 0.19999999 L -0.3 0.19999999 L -0.3 -0.25 L -0.25 -0.39999998 L -0.19999999 -0.39999998 L -0.19999999 -0.25 L -0.15 -0.25 L -0.15 -0.22500002 L -0.050000012 -0.22500002 L -0.050000012 -0.25 C -0.050000012 -0.39999998 0.050000012 -0.39999998 0.050000012 -0.25L 0.050000012 -0 L 0.100000024 0.099999994 L 0.100000024 0.15 L 0.050000012 0.125 L 0.050000012 0.15 L 0.024999976 0.15 L 0.050000012 0.19999999 L 0.19999999 0.19999999 L 0.3 0.3 L 0.39999998 0.3 L 0.39999998 0.4 ZM -0.19999999 0.19999999 L -0.050000012 0.19999999 L -0.025000006 0.15 L -0.050000012 0.15 L -0.050000012 0.125 L -0.099999994 0.15 L -0.099999994 0.099999994 L -0.050000012 -0 L -0.050000012 -0.17500001 L -0.15 -0.17500001 L -0.15 -0.14999998 L -0.19999999 -0.14999998 Z\"/></svg>", "Runway": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.5 0.125 L 0.5 0.125 L 0.5 -0.125 L -0.5 -0.125 ZM -0.39285716 0.01 L -0.39285716 -0.01 L -0.3214286 -0.01 L -0.3214286 0.01 ZM -0.24999999 0.01 L -0.24999999 -0.01 L -0.1785714 -0.01 L -0.1785714 0.01 ZM -0.10714285 0.01 L -0.10714285 -0.01 L -0.035714276 -0.01 L -0.035714276 0.01 ZM 0.03571431 0.01 L 0.03571431 -0.01 L 0.10714288 -0.01 L 0.10714288 0.01 ZM 0.17857145 0.01 L 0.17857145 -0.01 L 0.25000003 -0.01 L 0.25000003 0.01 ZM 0.32142857 0.01 L 0.32142857 -0.01 L 0.39285713 -0.01 L 0.39285713 0.01 Z\"/></svg>", "Satellite": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.19999999 0.3 L -0.15 0.050000012 Q -0.3 -0 -0.4 -0.100000024L -0.4 -0.14999998 Q -0.25 -0.050000012 -0.050000012 -0.050000012L 0 -0.3 L 0.050000012 -0.050000012 Q 0.25 -0.050000012 0.39999998 -0.14999998L 0.39999998 -0.100000024 Q 0.3 -0 0.14999998 0.050000012L 0.19999999 0.3 Z\"/></svg>", "Silo": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.3 0.099999994 L -0.25 -0.100000024 L -0.19999999 -0.100000024 Q 0 0.050000012 0.19999999 -0.100000024L 0.25 -0.100000024 L 0.3 0.099999994 Z\"/></svg>", "Town": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.19999999 L -0.4 0.099999994 L -0.3 0.099999994 L -0.3 -0.100000024 L -0.19999999 -0.19999999 L -0.099999994 -0.100000024 L -0.099999994 0.099999994 L 0.100000024 0.099999994 L 0.100000024 -0.19999999 L 0.3 -0.100000024 L 0.3 0.099999994 L 0.39999998 0.099999994 L 0.39999998 0.19999999 Z\"/></svg>", "Village": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.19999999 L -0.4 0.099999994 L -0.3 0.099999994 L -0.3 -0 L -0.19999999 -0.100000024 L -0.099999994 -0 L -0.099999994 0.099999994 L 0 0.099999994 L 0 -0 L 0.19999999 -0 L 0.19999999 0.099999994 L 0.39999998 0.099999994 L 0.39999998 0.19999999 Z\"/></svg>"};
+const UNIT_SVG = {"Shield": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 -0 C -0.4 0.22076602 -0.22076602 0.4 0 0.4C 0.22076602 0.4 0.4 0.22076602 0.4 -0C 0.4 -0.22076602 0.22076602 -0.4 0 -0.4C -0.22076602 -0.4 -0.4 -0.22076602 -0.4 -0Z\"/></svg>", "Fighter": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.15 0.4 L -0.099999994 0.25 L -0.3 0.19999999 L -0.3 0.099999994 L -0.099999994 -0 L -0.099999994 -0.100000024 L -0.050000012 -0.14999998 L 0 -0.39999998 L 0.050000012 -0.14999998 L 0.100000024 -0.100000024 L 0.100000024 -0 L 0.3 0.099999994 L 0.3 0.19999999 L 0.100000024 0.25 L 0.14999998 0.4 L 0 0.3 Z\"/></svg>", "Chopper": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M 0 -0.39999998 Q 0.14999998 -0.39999998 0.14999998 -0.25L 0.14999998 -0 Q 0.14999998 0.050000012 0.050000012 0.15L 0.050000012 0.35 L 0.14999998 0.375 L 0.14999998 0.4 L -0.15 0.4 L -0.15 0.375 L -0.050000012 0.35 L -0.050000012 0.15 Q -0.15 0.050000012 -0.15 -0L -0.15 -0.25 Q -0.15 -0.39999998 0 -0.39999998Z\"/></svg>", "Bomber": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.19999999 L 0 -0.3 L 0.39999998 0.19999999 L 0.3 0.3 L 0.19999999 0.19999999 L 0 0.3 L -0.19999999 0.19999999 L -0.3 0.3 Z\"/></svg>", "Tank": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.099999994 L -0.3 -0.050000012 L -0.19999999 -0.050000012 L -0.15 -0.19999999 L 0.050000012 -0.19999999 L 0.100000024 -0.050000012 L 0.3 -0.050000012 L 0.39999998 0.099999994 L 0.3 0.19999999 L -0.3 0.19999999 ZM 0.07499999 -0.125 L 0.27499998 -0.17500001 Z\"/></svg>", "Soldier": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.099999994 0.4 L -0.099999994 -0 Q 0 -0.050000012 0.100000024 0.050000012L 0.100000024 0.4 ZM -0.1 -0.19999999 C -0.1 -0.14480849 -0.055191506 -0.09999999 0 -0.09999999C 0.055191506 -0.09999999 0.1 -0.14480849 0.1 -0.19999999C 0.1 -0.2551915 0.055191506 -0.29999998 0 -0.29999998C -0.055191506 -0.29999998 -0.1 -0.2551915 -0.1 -0.19999999Z\"/></svg>", "Shell": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.15 0.050000012 L 0 -0.35000002 L 0.14999998 0.050000012 L 0.14999998 0.3 Q 0 0.4 -0.15 0.3Z\"/></svg>", "Emp": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.13 0.34000003 L -0.13 0.27499998 L -0.25999996 0.27499998 L -0.13 -0.050000012 L -0.13 -0.18 C -0.13 -0.44 0.13 -0.44 0.13 -0.18L 0.13 -0.050000012 L 0.26 0.27499998 L 0.13 0.27499998 L 0.13 0.34000003 L 0.03249997 0.34000003 L 0.065 0.40499997 L -0.065 0.40499997 L -0.0325 0.34000003 Z\"/></svg>", "Nuke": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.19999999 0.4 L -0.19999999 0.19999999 L -0.099999994 0.099999994 L -0.19999999 -0 L -0.19999999 -0.19999999 L 0 -0.39999998 L 0.19999999 -0.19999999 L 0.19999999 -0 L 0.100000024 0.099999994 L 0.19999999 0.19999999 L 0.19999999 0.4 L 0.100000024 0.3 L -0.099999994 0.3 Z\"/></svg>", "Ruler": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.25 0.3 L -0.4 -0.3 L -0.15 -0.100000024 L 0 -0.35000002 L 0.14999998 -0.100000024 L 0.39999998 -0.3 L 0.25 0.3 ZM -0.425 -0.27500004 C -0.425 -0.24740428 -0.40259576 -0.22500004 -0.375 -0.22500004C -0.34740424 -0.22500004 -0.325 -0.24740428 -0.325 -0.27500004C -0.325 -0.3025958 -0.34740424 -0.32500005 -0.375 -0.32500005C -0.40259576 -0.32500005 -0.425 -0.3025958 -0.425 -0.27500004ZM -0.05 -0.35000002 C -0.05 -0.32240427 -0.027595753 -0.3 0 -0.3C 0.027595753 -0.3 0.05 -0.32240427 0.05 -0.35000002C 0.05 -0.37759578 0.027595753 -0.40000004 0 -0.40000004C -0.027595753 -0.40000004 -0.05 -0.37759578 -0.05 -0.35000002ZM 0.325 -0.27500004 C 0.325 -0.24740428 0.34740424 -0.22500004 0.375 -0.22500004C 0.40259576 -0.22500004 0.425 -0.24740428 0.425 -0.27500004C 0.425 -0.3025958 0.40259576 -0.32500005 0.375 -0.32500005C 0.34740424 -0.32500005 0.325 -0.3025958 0.325 -0.27500004Z\"/></svg>"};
+
+// ---- world.js ----
+// SPDX-FileCopyrightText: 2026 Kiomet clone contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// The world: tower tick loop, forces, upgrades, spawning, scoring.
+// Ported from Kiomet common/src/chunk.rs, common/src/chunk/event.rs,
+// common/src/chunk/maintenance.rs, server/src/world.rs, server/src/service.rs.
+
+
+
+
+const key = (x, y) => y * WORLD_SIZE + x;
+const kOf = (id) => key(id.x, id.y);
+
+class Tower {
+    constructor(x, y, type) {
+        this.x = x; this.y = y;
+        this.type = type;
+        this.owner = null;
+        this.units = new Units();
+        this.delay = 0;
+        this.inbound = [];
+        this.outbound = [];
+        this.supply = null;
+        this.flash = 0;
+        this.hit = 0;
+    }
+    get active() { return this.delay === 0; }
+    get id() { return { x: this.x, y: this.y }; }
+    get canDestroy() { return this.inbound.length === 0 && this.owner === null; }
+    forceUnits() { return this.units.forceUnits(this.type); }
+    takeForceUnits() {
+        const f = this.forceUnits();
+        for (const [u, c] of f.counts()) this.units.subtract(u, c);
+        return f;
+    }
+    unitGeneration(u) {
+        if (u !== SHIELD && this.units.hasRuler()) return null;
+        return TOWER[this.type].genPeriod(u);
+    }
+    generatesMobile() {
+        return UNITS.some((_, u) => isMobile(u, this.type) && this.unitGeneration(u) != null);
+    }
+    setOwner(owner) {
+        if (this.owner === owner) return;
+        if (this.owner !== null) this.supply = null;
+        this.owner = owner;
+    }
+}
+
+class Player {
+    constructor(id, name, opts = {}) {
+        this.id = id;
+        this.name = name;
+        this.alive = false;
+        this.bot = !!opts.bot;
+        this.allies = new Set();
+        this.newAllies = new Set();
+        this.towers = new Set();
+        this.score = 0;
+        this.towerCounts = {};
+        this.rulerKey = null;
+        this.deathReason = null;
+        this.spawnCooldown = 0;
+        this.rank = opts.rank || 0;
+        this.botState = {
+            ambition: 8 + Math.floor(Math.random() * 5),
+            war: null,
+            quitAt: 0,
+        };
+    }
+}
+
+class Game {
+    constructor(opts = {}) {
+        this.time = 0;
+        this.towers = new Map();
+        this.players = [];
+        this.forces = [];
+        this.events = [];
+        this.shrink = opts.shrink !== false;
+        this.noShrink = opts.shrink === false;
+        this.onEvent = opts.onEvent || null;
+        this.botUpdate = opts.botUpdate || null;
+        this.hostileAt = TICK_HZ * 60 * 8;
+        buildConnectivity();
+    }
+
+    tower(x, y) { return this.towers.get(key(x, y)); }
+    getTower(id) { return this.towers.get(key(id.x, id.y)); }
+    ensureTower(id) {
+        let t = this.getTower(id);
+        if (!t) {
+            t = new Tower(id.x, id.y, towerTypeAt(id.x, id.y));
+            this.towers.set(key(id.x, id.y), t);
+        }
+        return t;
+    }
+
+    info(ev) {
+        this.events.push(ev);
+        if (this.onEvent) this.onEvent(ev);
+        if (this.events.length > 600) this.events.splice(0, 300);
+    }
+
+    // ---------------- spawning ----------------
+    findSpawn() {
+        let searchRadius = Math.floor(Math.sqrt(100 / Math.PI));
+        for (let i = 0; i < 200000; i++) {
+            const a = Math.random() * Math.PI * 2, r = Math.sqrt(Math.random()) * searchRadius;
+            const x = Math.max(0, Math.min(WORLD_SIZE - 1, Math.floor(CENTER.x + Math.cos(a) * r + 0.5)));
+            const y = Math.max(0, Math.min(WORLD_SIZE - 1, Math.floor(CENTER.y + Math.sin(a) * r + 0.5)));
+            const id = { x, y };
+            if (this.isSpawnable(id)) return id;
+            if (i % 8 === 0) searchRadius += 1;
+        }
+        return null;
+    }
+
+    isSpawnable(id) {
+        return isSpawnablePosition(id) && this.isGoodSpawn(id) && this.isSafeSpawn(id);
+    }
+
+    typeAtOrGenerated(id) {
+        const t = this.getTower(id);
+        if (t) return t.owner !== null ? null : t.type;
+        return towerTypeAt(id.x, id.y);
+    }
+
+    isGoodSpawn(id) {
+        const tt = this.typeAtOrGenerated(id);
+        if (!tt) return false;
+        let n = 0, spawnableN = 0;
+        for (const nb of neighbors(id.x, id.y)) {
+            const nt = this.typeAtOrGenerated(nb);
+            if (!nt) return false;
+            n += 1;
+            if (SPAWNABLE.some((s) => s.name === nt)) spawnableN += 1;
+        }
+        return (SPAWNABLE.some((s) => s.name === tt) && n >= 3) || spawnableN >= 2;
+    }
+
+    isSafeSpawn(id) {
+        const seen = new Set([key(id.x, id.y)]);
+        let frontier = [id];
+        for (let d = 0; d < 4; d++) {
+            const next = [];
+            for (const t of frontier) {
+                for (const nb of neighbors(t.x, t.y)) {
+                    const k = key(nb.x, nb.y);
+                    if (seen.has(k)) continue;
+                    seen.add(k);
+                    const tw = this.towers.get(k);
+                    if (tw && (tw.owner !== null || tw.inbound.length > 0)) return false;
+                    next.push(nb);
+                }
+            }
+            frontier = next;
+        }
+        return seen.size >= 12;
+    }
+
+    bubble(origin, radius, fn) {
+        const seen = new Set([key(origin.x, origin.y)]);
+        const queue = [origin];
+        const r2 = radius * radius;
+        fn(origin);
+        for (let i = 0; i < queue.length; i++) {
+            const t = queue[i];
+            for (const nb of neighbors(t.x, t.y)) {
+                if (distanceSquared(nb, origin) > r2) continue;
+                const k = key(nb.x, nb.y);
+                if (seen.has(k)) continue;
+                seen.add(k);
+                queue.push(nb);
+                fn(nb);
+            }
+        }
+    }
+
+    // Generate towers from `id` along the connectivity path towards the world center.
+    traverse(id, out) {
+        let cur = id;
+        for (let i = 0; i < 4000; i++) {
+            if (this.getTower(cur)) return;
+            const k = key(cur.x, cur.y);
+            if (out.has(k)) return;
+            out.set(k, cur);
+            const parent = connectivity(cur);
+            if (!parent) return;
+            if (parent.x === cur.x && parent.y === cur.y) return;
+            cur = parent;
+        }
+    }
+
+    spawnPlayer(player) {
+        const id = this.findSpawn();
+        if (!id) return false;
+        const radius = player.bot ? 35 : 50;
+        const toGen = new Map();
+        this.bubble(id, radius, (t) => this.traverse(t, toGen));
+        for (const t of toGen.values()) this.ensureTower(t);
+
+        const t = this.ensureTower(id);
+        t.units = new Units();
+        t.supply = null;
+        t.delay = 0;
+        t.setOwner(player.id);
+        player.alive = true;
+        player.deathReason = null;
+        player.score = 0;
+        player.towers = new Set([key(id.x, id.y)]);
+        this.info({ type: 'gained', tower: id, player: player.id });
+
+        t.units.add(RULER, 1, t.type, true);
+        t.units.add(SHIELD, 255, t.type, true);
+
+        const rank = player.rank || 0;
+        for (const unit of [SOLDIER, FIGHTER]) {
+            const soldiers = new Units();
+            soldiers.add(unit, unit === FIGHTER ? 2 : rank >= 2 ? 8 : 4);
+            soldiers.add(SHIELD, 15);
+            for (const nb of neighbors(id.x, id.y)) {
+                this.sendForce(t, new Force(player.id, soldiers.clone(), [id, nb]));
+            }
+            if (rank < 5) break;
+        }
+        for (const nb of neighbors(id.x, id.y)) {
+            const n = this.getTower(nb);
+            if (n && n.owner === null) n.units = new Units();
+        }
+        return true;
+    }
+
+    // ---------------- actions ----------------
+    sendForce(from, force) {
+        force.host = null;
+        // The King's high morale: forces leaving his tower (or a neighbour's) march slower.
+        if (from && from.owner != null) {
+            const p = this.players[from.owner];
+            if (p && p.rulerKey != null) {
+                const rk = p.rulerKey;
+                const king = this.towers.get(rk);
+                const dx = Math.abs(from.x - (rk % WORLD_SIZE));
+                const dy = Math.abs(from.y - Math.floor(rk / WORLD_SIZE));
+                if (king && (dx <= 1 && dy <= 1)) force.slow = RULER_MARCH_MULT;
+            }
+        }
+        this.forces.push(force);
+        from.outbound.push(force);
+        const dst = this.ensureTower(force.destination);
+        if (dst) { dst.inbound.push(force); force.host = dst; }
+        return force;
+    }
+
+    deploy(playerId, fromId, path) {
+        const t = this.getTower(fromId);
+        if (!t || t.owner !== playerId) return 'source not owned';
+        const strength = t.forceUnits();
+        if (strength.isEmpty()) return 'empty force';
+        const err = this.validatePath(path, fromId, strength.maxEdgeDistance());
+        if (err) return err;
+        this.sendForce(t, new Force(playerId, t.takeForceUnits(), this.canonicalPath(path)));
+        return null;
+    }
+
+    // Paths travel through the UI as bare {x,y}; everywhere inside the engine they must be the
+    // very Tower objects the map holds (its roads mutate them).
+    canonicalPath(path) {
+        return path.map((p) => this.getTower(p) || p);
+    }
+
+    validatePath(path, fromId, maxEdge) {
+        if (!path || path.length < 2) return 'path too short';
+        if (maxEdge != null && path.length !== 2) return 'path too long';
+        if (maxEdge == null && path.length > 16) return 'path too long';
+        if (path[0].x !== fromId.x || path[0].y !== fromId.y) return 'source mismatch';
+        for (let i = 1; i < path.length; i++) {
+            const prev = path[i - 1], next = path[i];
+            if (prev.x === next.x && prev.y === next.y) return 'duplicate tower';
+            if (maxEdge != null) {
+                if (distanceSquared(prev, next) > (maxEdge + 1) ** 2 - 1) return 'edge too long';
+            } else if (!neighbors(prev.x, prev.y).some((n) => n.x === next.x && n.y === next.y)) {
+                return 'not neighbor';
+            }
+            if (!this.getTower(next)) return 'not generated';
+        }
+        return null;
+    }
+
+    setSupplyLine(playerId, fromId, path) {
+        const t = this.getTower(fromId);
+        if (!t || t.owner !== playerId) return 'source not owned';
+        if (!t.generatesMobile()) return 'invalid supply line';
+        if (path) {
+            const err = this.validatePath(path, fromId, TOWER[t.type].rangedDist);
+            if (err) return err;
+            if (t.supply && samePath(t.supply, path)) path = null;
+        }
+        t.supply = path ? this.canonicalPath(path) : null;
+        return null;
+    }
+
+    upgradeTower(playerId, id, type) {
+        const t = this.getTower(id);
+        if (!t) return 'no tower';
+        if (t.owner !== playerId) return 'not owned';
+        if (!t.active) return 'upgrade pending';
+        const next = TOWER[type];
+        if (!next) return 'bad type';
+        const cur = TOWER[t.type];
+        if (cur.upgrades.includes(type)) {
+            if (!meetsPrereqs(type, this.players[playerId].towerCounts)) return 'missing prerequisite';
+        } else if (cur.basis !== type) return 'invalid upgrade path';
+
+        t.type = type;
+        t.delay = Math.max(1, Math.round(next.delay * TICK_HZ));
+        t.units.reconcile(type, t.owner !== null);
+        if (t.supply && !t.generatesMobile()) t.supply = null;
+        this.info({ type: 'upgrade', tower: id, player: playerId, towerType: type });
+        return null;
+    }
+
+    towerType(t) { return TOWER[t.type]; }
+
+    breakAlliance(a, b) {
+        const pa = this.players[a], pb = this.players[b];
+        if (pa) pa.allies.delete(b);
+        if (pb) pb.allies.delete(a);
+        this.info({ type: 'alliance', a, b, on: false });
+    }
+
+    // Accept/decline an alliance request. `request` is one-sided until both agree.
+    requestAlliance(a, b) {
+        const pa = this.players[a], pb = this.players[b];
+        if (!pa || !pb || a === b) return 'bad player';
+        if (pa.allies.has(b) && pb.allies.has(a)) { this.breakAlliance(a, b); return null; }
+        const mutual = pa.allies.has(b) || pb.allies.has(a);
+        pa.allies.add(b);
+        if (mutual) {
+            pb.allies.add(a);
+            for (const x of [a, b]) this.players[x].newAllies.add(x === a ? b : a);
+            this.info({ type: 'alliance', a, b, on: true });
+        } else {
+            this.info({ type: 'allianceRequest', from: a, to: b });
+        }
+        return null;
+    }
+
+    // A* over roads. Prefers own territory, avoids enemy and zombie towers.
+    findBestPath(src, dst, maxEdge, playerId) {
+        if (maxEdge != null) {
+            const d2 = (src.x - dst.x) ** 2 + (src.y - dst.y) ** 2;
+            if (d2 <= (maxEdge + 1) ** 2 - 1) return [src, dst];
+            return null;
+        }
+        const dstTower = this.getTower(dst);
+        const dstOwner = dstTower ? dstTower.owner : null;
+        const keyOf = (id) => id.y * WORLD_SIZE + id.x;
+        const start = keyOf(src), goal = keyOf(dst);
+        const gScore = new Map([[start, 0]]);
+        const cameFrom = new Map();
+        const open = [[0, start]];
+        const idOf = new Map([[start, src], [goal, dst]]);
+        const heur = (id) => Math.floor(Math.sqrt((id.x - dst.x) ** 2 + (id.y - dst.y) ** 2) * 256);
+        let budget = 3000;
+        while (open.length && budget-- > 0) {
+            let bi = 0;
+            for (let i = 1; i < open.length; i++) if (open[i][0] < open[bi][0]) bi = i;
+            const [f, cur] = open.splice(bi, 1)[0];
+            if (cur === goal) break;
+            const curId = idOf.get(cur);
+            for (const nb of neighbors(curId.x, curId.y)) {
+                const nk = keyOf(nb);
+                const t = this.towers.get(nk);
+                if (!t) continue;
+                const allyPass = t.owner !== null && t.owner !== dstOwner && this.haveAlliance(playerId, t.owner);
+                if (allyPass) continue;
+                const cost = Math.floor(Math.sqrt(distanceSquared(curId, nb)) * 256);
+                const tentative = gScore.get(cur) + cost;
+                if (tentative < (gScore.get(nk) ?? Infinity)) {
+                    gScore.set(nk, tentative);
+                    cameFrom.set(nk, cur);
+                    idOf.set(nk, nb);
+                    let h = heur(nb);
+                    if (t.owner === playerId) h += 2 * 256;
+                    else if (t.owner !== null || !t.units.isEmpty()) h += 32 * 256;
+                    open.push([tentative + h, nk]);
+                }
+            }
+        }
+        if (!cameFrom.has(goal)) return null;
+        const path = [dst];
+        let cur = goal;
+        while (cur !== start) {
+            cur = cameFrom.get(cur);
+            const id = idOf.get(cur);
+            if (!id) return null;
+            path.push(id);
+        }
+        path.reverse();
+        return path.length >= 2 ? path : null;
+    }
+
+    // ---------------- tick ----------------
+    tick() {
+        this.time += 1;
+        const tick = this.time;
+
+        for (const p of this.players) p.newAllies.clear();
+
+        // Halt forces whose remaining path crosses a brand new ally or a destroyed tower.
+        for (const t of this.towers.values()) {
+            if (t.inbound.length) {
+                for (const f of t.inbound) {
+                    if (f.owner === null) continue;
+                    if (!this.pathHalted(f)) continue;
+                    // Halt without rewriting the path object that every holder already shares:
+                    // the force simply stops at its current destination (`Force.halted()`).
+                    f.parked = true;
+                }
+            }
+            // NOTE: supply lines are deliberately *not* pruned here. A force leaving a tower is
+            // both a traveller and the supply line's live copy, so truncating the shared path
+            // would strand it mid-route. They are cleared on capture and on upgrade instead.
+        }
+
+        for (const t of this.towers.values()) this.tickTower(t, tick);
+
+        // Nothing should be able to orphan a force; if something does, retire it instead of
+        // letting it drift around the map forever.
+        if (tick % 8 === 0 && this.forces.length > 32) {
+            const wanted = new Set();
+            for (const t of this.towers.values()) {
+                for (const f of t.inbound) wanted.add(f);
+                for (const f of t.outbound) wanted.add(f);
+            }
+            for (const f of this.forces.slice()) if (!wanted.has(f)) this.removeForce(f);
+        }
+
+        for (const p of this.players) if (p.alive) this.recomputePlayer(p);
+        if (tick % 2 === 0) {
+            for (const p of this.players) if (p.alive && p.bot && this.botUpdate) this.botUpdate(this, p);
+        }
+        if (tick % (TICK_HZ * 2) === 0) this.checkDeaths();
+        if (tick % (TICK_HZ * 10) === 0 && this.shrink) this.shrinkWorld();
+        if (this.debugBombers && tick % (TICK_HZ * 60 * 4) === 0) this.hostiles();
+    }
+
+    pathHalted(f, start = 2) {
+        if (!f.path) return true;
+        for (let i = Math.max(0, f.idx + start); i < f.path.length; i++) {
+            if (!f.path[i]) return true;
+            const t = this.getTower(f.path[i]);
+            if (!t) return true;
+            if (f.owner != null && t.owner != null && t.owner !== f.owner &&
+                this.haveAlliance(f.owner, t.owner)) return true;
+        }
+        return false;
+    }
+
+    haveAlliance(a, b) {
+        if (a === b || a == null || b == null) return false;
+        const pa = this.players[a], pb = this.players[b];
+        return !!pa && !!pb && pa.allies.has(b) && pb.allies.has(a);
+    }
+
+    relationship(a, b) {
+        if (a === b) return 'comrade';
+        if (this.haveAlliance(a, b)) return 'ally';
+        return 'enemy';
+    }
+
+    tickTower(t, tick) {
+        const owner = t.owner;
+        const period = owner !== null ? 30 : 10;
+
+        let deploy = false;
+        if (tick % (period * TICK_HZ) === 0) {
+            const diminished = this.diminish(t);
+            deploy = diminished !== 0 && t.active;
+        }
+
+        if (t.delay > 0) {
+            t.delay -= 1;
+        } else if (owner !== null) {
+            const tt = TOWER[t.type];
+            for (const name in tt.gen) {
+                const u = tt.genUnitId(name);
+                if (tick % (tt.gen[name] * TICK_HZ) === 0) {
+                    const added = t.units.add(u, 2, t.type, false);
+                    t.units.subtract(u, Math.max(0, added - 1));
+                    if (isMobile(u, t.type) && added < 2) deploy = true;
+                }
+            }
+        } else if (TOWER[t.type].down && tick % (60 * TICK_HZ) === 0) {
+            t.type = TOWER[t.type].down;
+            t.units.reconcile(t.type, false);
+        }
+
+        if (deploy && !t.units.hasRuler() && t.supply && t.owner !== null) {
+            const fu = t.forceUnits();
+            if (!fu.isEmpty()) {
+                const med = fu.maxEdgeDistance();
+                if (med >= TOWER[t.type].rangedDist) {
+                    this.sendForce(t, new Force(t.owner, t.takeForceUnits(),
+                        t.supply.map((p) => ({ x: p.x, y: p.y }))));
+                }
+            }
+        }
+
+        if (t.inbound.length && t.outbound.length) this.collideForces(t);
+
+        if (t.inbound.length) {
+            // Iterate a snapshot: arriving forces can re-enter `t.inbound` (e.g. the tower below
+            // loses its last defender to a king and the king starts living inside it).
+            const finished = [], stepped = [];
+            for (const f of t.inbound.slice()) {
+                if (f.parked) { finished.push(f); continue; } // arrived (or parked by a halt)
+                if (!f.tick()) continue;
+                if (f.isLast) { finished.push(f); continue; } // final leg completed
+                stepped.push(f);
+            }
+            // Intermediate checkpoints: keep walking the same road towards the real target.
+            for (const f of stepped) {
+                f.parked = false;
+                f.reported = false;
+                const at = t.inbound.indexOf(f);
+                if (at >= 0) t.inbound.splice(at, 1);
+                const dst = this.ensureTower(f.nextDestination);
+                if (dst && !dst.inbound.includes(f)) { dst.inbound.push(f); f.host = dst; }
+            }
+            for (const f of finished) {
+                const at = t.inbound.indexOf(f);
+                if (at >= 0) t.inbound.splice(at, 1);
+                this.arrive(t, f);
+            }
+        }
+
+        if (t.outbound.length) {
+            t.outbound = t.outbound.filter((f) => {
+                // A halted force sits at its destination until it expires.
+                const req = Math.max(1, f.required);
+                const step = f.path.length === 2 ? 1 : progressPerTick(f.units);
+                f.progress = Math.min(f.progress + step, req);
+                f.host = null;             // the shadow is done; a force is retired only on arrival
+                return f.progress < req;
+            });
+        }
+        if (t.flash > 0) t.flash -= 1;
+    }
+
+    diminish(t) {
+        let units = 0;
+        for (let u = 0; u < UNITS.length; u++) {
+            if (t.owner === null || t.units.get(u) > t.units.capacity(u, t.type)) {
+                const sub = t.units.subtract(u, 1);
+                if (isMobile(u, t.type)) units += sub;
+            }
+        }
+        return units;
+    }
+
+    removeForce(f) {
+        f.host = null;
+        const i = this.forces.indexOf(f);
+        if (i >= 0) this.forces.splice(i, 1);
+    }
+
+    collideForces(t) {
+        for (const inb of t.inbound.slice()) {
+            if (!t.inbound.includes(inb)) continue;
+            for (const out of t.outbound.slice()) {
+                if (out.destination.x !== inb.source.x || out.destination.y !== inb.source.y) continue;
+                if (out.owner === inb.owner) continue;
+                if (this.relationship(inb.owner, out.owner) !== 'enemy') continue;
+
+                const reqA = progressRequired(inb.source, inb.destination);
+                const reqB = progressRequired(out.source, out.destination);
+                const a0 = (reqA - Math.min(reqA, inb.progress + progressPerTick(inb.units))) * reqB;
+                const a1 = (reqA - inb.progress) * reqB;
+                const b0 = out.progress * reqA;
+                const b1 = Math.min(255, out.progress + progressPerTick(out.units)) * reqA;
+                if (Math.max(a0, b0) > Math.min(a1, b1)) continue;
+
+                const win = fight(new Combatants(inb.units), new Combatants(out.units),
+                    (e) => this.info({ ...e, tower: inb.source }));
+                if (win === DEFENDER) {
+                    const i = t.inbound.indexOf(inb);
+                    if (i >= 0) t.inbound.splice(i, 1);
+                    this.removeForce(inb);
+                    break;
+                } else if (win === ATTACKER) {
+                    const i = t.outbound.indexOf(out);
+                    if (i >= 0) t.outbound.splice(i, 1);
+                    this.removeForce(out);
+                }
+            }
+        }
+    }
+
+    arrive(t, f) {
+        f.host = null;                    // it is no longer on its way anywhere
+        const tp = t.owner;
+        const id = { x: t.x, y: t.y };
+
+        if (tp !== null || !t.units.isEmpty()) {
+            const fp = f.owner;
+            const rel = this.relationship(tp, fp);
+            const unfriendly = rel === 'enemy' || (rel === 'ally' && f.units.hasRuler());
+            if (unfriendly) {
+                let towerEmped = false;
+                const winner = fight(new Combatants(f.units), new Combatants(t.units, t.type), (e) => {
+                    if (e.type === 'emp' && e.side === ATTACKER) towerEmped = true;
+                    this.info({ ...e, tower: id });
+                });
+                if (towerEmped) t.delay = Math.max(t.delay, EMP_TICKS);
+                t.hit = 2;
+                if (winner !== ATTACKER && fp !== null) this.info({ type: 'lostForce', player: fp, tower: id });
+                if (winner !== DEFENDER) {
+                    if (tp !== null) this.info({ type: 'lostTower', tower: id, player: tp });
+                    const newOwner = (winner === ATTACKER && fp !== null) ? fp : null;
+                    if (newOwner !== null) this.info({ type: 'gained', tower: id, player: newOwner });
+                    if (tp !== null || newOwner !== null) t.setOwner(newOwner);
+                    if (t.owner === null) {
+                        while (TOWER[t.type].down) t.type = TOWER[t.type].down;
+                        t.delay = 0;
+                    }
+                    t.flash = 3;
+                }
+            }
+        } else if (f.owner !== null && f.units.isAlive()) {
+            this.info({ type: 'gained', tower: id, player: f.owner });
+            t.setOwner(f.owner);
+            t.units.reconcile(t.type, t.owner !== null);
+        }
+
+        const rel = this.relationship(f.owner, t.owner);
+        if (f.units.isEmpty()) {
+            this.removeForce(f);
+        } else if (f.fuel === 0) {
+            if (f.owner !== null) this.info({ type: 'lostForce', player: f.owner, tower: id });
+            this.removeForce(f);
+        } else if (rel === 'comrade' && this.tryMoveOn(f, t)) {
+            // keeps going along its own path
+        } else if (rel === 'ally' && !f.units.hasRuler() && this.tryMoveOn(f, t, true)) {
+            // handed off to the ally's supply line
+        } else if (rel === 'comrade' || (rel === 'ally' && !f.units.hasRuler())) {
+            t.units.addUnitsToTower(f.units, t.type, t.owner !== null);
+            this.removeForce(f);
+        } else if (f.units.get(RULER) > 0) {
+            if (f.owner !== null) this.info({ type: 'ruler', player: f.owner, side: ATTACKER, tower: id });
+            this.removeForce(f);
+        } else {
+            this.removeForce(f);
+        }
+    }
+
+    tryMoveOn(f, t, fromAlly = false) {
+        if (!fromAlly && !f.isLast) {
+            f.progress = 0;
+            if (f.units.isMany()) f.fuel -= 1;
+            return true;
+        }
+        if (!t.supply || TOWER[t.type].rangedDist != null || !f.units.isMany()) return false;
+        if (t.type === 'Projector') {
+            const maxShield = TOWER.Projector.rawCap(SHIELD);
+            const maxTransfer = Math.max(0, maxShield - f.units.get(SHIELD));
+            if (maxTransfer > 0) f.units.add(SHIELD, t.units.subtract(SHIELD, maxTransfer));
+        }
+        if (f.units.get(CHOPPER)) {
+            const initial = forceSpeed(f.units);
+            const order = { immobile: 0, slow: 1, normal: 2, fast: 3 };
+            for (const transfer of [SOLDIER, TANK]) {
+                if (order.normal >= order[initial]) break;
+                for (;;) {
+                    if (t.units.get(transfer) === 0) break;
+                    if (f.units.add(transfer, 1) === 0) break;
+                    if (order[forceSpeed(f.units)] < order[initial]) { f.units.subtract(transfer, 1); break; }
+                    t.units.subtract(transfer, 1);
+                }
+            }
+        }
+        f.path = t.supply.map((p) => this.getTower(p) || this.ensureTower(p));
+        f.idx = 0;
+        f.progress = 0;
+        if (f.units.isMany()) f.fuel -= 1;
+        const dst = this.ensureTower(f.destination);
+        if (dst) { dst.inbound.push(f); f.host = dst; }
+        return true;
+    }
+
+    // ---------------- bookkeeping ----------------
+    recomputePlayer(p) {
+        let score = 0;
+        const counts = {};
+        p.rulerKey = null;
+        // Rebuild the holdings from the map so a tower can never be owned by `p` without
+        // being in their set (capture, upgrade and death all mutate the map directly).
+        const next = new Set();
+        for (const [k, t] of this.towers) {
+            if (t.owner !== p.id) continue;
+            next.add(k);
+            if (t.units.hasRuler()) p.rulerKey = k;
+            if (!t.active) continue;
+            score += TOWER[t.type].score;
+            counts[t.type] = (counts[t.type] || 0) + 1;
+        }
+        p.towers = next;
+        p.score = score;
+        p.towerCounts = counts;
+    }
+
+    checkDeaths() {
+        for (const p of this.players) {
+            if (!p.alive) continue;
+            let rulerSeen = false;
+            for (const k of p.towers) {
+                const t = this.towers.get(k);
+                if (!t) continue;
+                if (t.owner !== p.id) continue;
+                if (t.units.hasRuler()) rulerSeen = true;
+                for (const f of t.inbound) if (f.owner === p.id && f.units.hasRuler()) rulerSeen = true;
+            }
+            if (!rulerSeen) this.killPlayer(p);
+        }
+    }
+
+    killPlayer(p) {
+        if (!p.alive) return;
+        p.alive = false;
+        p.allies.clear();
+        this.info({ type: 'died', player: p.id });
+        for (const t of this.towers.values()) {
+            if (t.owner === p.id) {
+                t.units.subtract(RULER, 255);
+                t.units.subtract(SHIELD, 255);
+                t.setOwner(null);
+                this.info({ type: 'lostTower', tower: t.id, player: p.id });
+            }
+            for (const list of [t.inbound, t.outbound]) {
+                for (const f of list.slice()) {
+                    if (f.owner === p.id) {
+                        const i = list.indexOf(f);
+                        if (i >= 0) list.splice(i, 1);
+                        this.removeForce(f);
+                    }
+                }
+            }
+        }
+        for (const q of this.players) q.allies.delete(p.id);
+        p.towers.clear();
+    }
+
+    // Unclaimed towers slowly vanish, and with them the map nobody is using.
+    shrinkWorld() {
+        if (this.noShrink) return;
+        const locked = new Set();
+        for (const [k, t] of this.towers) {
+            if (t.canDestroy) continue;
+            locked.add(k);
+            let cur = t.id;
+            for (let i = 0; i < 400; i++) {
+                const p = connectivity(cur);
+                if (!p) break;
+                const pk = key(p.x, p.y);
+                if (locked.has(pk)) break;
+                locked.add(pk);
+                cur = p;
+            }
+            if (t.units.hasRuler()) {
+                this.bubble(t.id, 12, (id) => locked.add(key(id.x, id.y)));
+            }
+        }
+        const remove = [];
+        let count = 0;
+        for (const [k, t] of this.towers) {
+            count += 1;
+            if (!locked.has(k) && t.canDestroy) remove.push(k);
+        }
+        // Never let the visible map get smaller than a reasonable play area.
+        if (count - remove.length < Math.max(600, this.players.length * 150)) return;
+        for (const k of remove) this.towers.delete(k);
+    }
+
+    // Over budget: two bombers from the world centre, exactly like Kiomet's summoned debug
+    // players, kept behind an explicit opt-in so normal games stay untouched.
+    hostiles() {
+        if (!this.debugBombers || !this.towers.size) return;
+        const keys = Array.from(this.towers.keys());
+        this.ensureTower(CENTER);
+        for (let i = 0; i < 2; i++) {
+            const t = this.towers.get(keys[Math.floor(Math.random() * keys.length)]);
+            if (!t || t.owner !== null) continue;
+            const u = new Units();
+            u.add(BOMBER, 5);
+            const from = connectivity(t.id) || CENTER;
+            this.sendForce(this.getTower(CENTER), new Force(null, u, [from, t.id]));
+        }
+    }
+}
+
+function samePath(a, b) {
+    if (!a || !b || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i].x !== b[i].x || a[i].y !== b[i].y) return false;
+    return true;
+}
+
+// ---- bot.js ----
+// SPDX-FileCopyrightText: 2026 Kiomet clone contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// A tower AI modelled on Kiomet's server/src/bot.rs: every update it looks at one of its
+// towers, upgrades it if the shields are banked, and sends its mobile units at the most
+// promising reachable target — the enemy it is currently fighting, or unclaimed ground.
+
+
+
+function botUpdate(game, player) {
+    if (!player.alive) return;
+    const bot = player.botState;
+
+    // Bots retire after a while, like Kiomet's, so the map makes room for humans.
+    if (!bot.quitAt) bot.quitAt = game.time + 4 * 60 * (30 + Math.random() * 60);
+    if (game.time > bot.quitAt) { game.killPlayer(player); return; }
+
+    const mine = [...player.towers].map((k) => game.towers.get(k)).filter((t) => t && t.owner === player.id);
+    if (!mine.length) return;
+
+    // ---- what are we fighting? the nearest enemy touching our land
+    let target = null, targetDist = Infinity, enemyTower = null;
+    for (const t of mine) {
+        for (const nb of nearTowers(game, t, 3)) {
+            if (nb.owner == null || nb.owner === player.id) continue;
+            if (game.haveAlliance(player.id, nb.owner)) continue;
+            const d = distanceSq(t, nb);
+            if (d < targetDist) { targetDist = d; target = nb.owner; enemyTower = nb; }
+        }
+    }
+
+    // The king runs for safety when his tower is about to fall.
+    const king = mine.find((t) => t.units.hasRuler());
+    if (king && king.active && kingIsThreatened(game, player, king)) {
+        evacuateKing(game, player, king);
+        return;
+    }
+
+    // ---- upgrade a tower with plenty of shields
+    const upgradable = mine.filter((t) => t.active && t.units.get(SHIELD) >=
+        Math.floor(t.units.capacity(SHIELD, t.type) / (target != null ? 1 : 2)));
+    if (upgradable.length && Math.random() < 0.6) {
+        upgrade(game, player, upgradable[Math.floor(Math.random() * upgradable.length)]);
+    }
+
+    // ---- send a force. Never gamble with the king.
+    const withUnits = mine.filter((t) => !t.units.hasRuler() && !t.forceUnits().isEmpty());
+    if (!withUnits.length) return;
+    const src = withUnits[Math.floor(Math.random() * withUnits.length)];
+
+    const strength = src.forceUnits();
+    // Kiomet's bot calls any force of 5+ ground damage "formidable"; below that it only
+    // occasionally bothers, which is far too timid for an offline map of this size.
+    const formidable = strength.forceGroundDamage() >= 2;
+    if (!formidable && Math.random() > 0.25) return;
+    const maxEdge = strength.maxEdgeDistance();
+
+    const candidates = [];
+    for (const dst of nearTowers(game, src, 8)) {
+        if (dst === src) continue;
+        if (maxEdge != null && distanceSq(src, dst) > (maxEdge + 1) ** 2 - 1) continue;
+        if (dst.owner === player.id) {
+            // Reinforce: only if it shortens the way to the enemy.
+            if (!enemyTower) continue;
+            if (distanceSq(enemyTower, dst) >= distanceSq(enemyTower, src)) continue;
+            if (dst.units.get(SHIELD) < 5) continue;
+        } else if (dst.owner == null) {
+            // Unclaimed land is always worth taking.
+        } else if (game.haveAlliance(player.id, dst.owner)) {
+            continue;
+        } else if (target != null && dst.owner !== target) {
+            continue;                     // one theatre at a time
+        } else if (!formidable) {
+            continue;                     // a token force shouldn't poke a garrison
+        }
+        candidates.push(dst);
+    }
+    if (!candidates.length) return;
+
+    const dst = candidates[Math.floor(Math.random() * candidates.length)];
+    const path = game.findBestPath(src, dst, maxEdge, player.id);
+    if (!path) return;
+    if (src.generatesMobile() && dst.generatesMobile() && Math.random() < 0.25 &&
+        game.setSupplyLine(player.id, src, path) == null) return;
+    game.deploy(player.id, src, path);
+}
+
+// Towers within `radius` tower cells (the bubble radius is in world units: 5 per cell).
+function nearTowers(game, src, radius) {
+    const out = [];
+    game.bubble(src.id, radius * 5, (id) => {
+        const t = game.getTower(id);
+        if (t) out.push(t);
+    });
+    return out;
+}
+
+function distanceSq(a, b) {
+    return (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
+}
+
+function upgrade(game, player, t) {
+    if (!t.active) return;
+    const opts = TOWER[t.type].upgrades.filter((u) => meetsPrereqs(u, player.towerCounts));
+    if (!opts.length) return;
+    game.upgradeTower(player.id, t, opts[Math.floor(Math.random() * opts.length)]);
+}
+
+function kingIsThreatened(game, player, king) {
+    const armed = king.inbound.filter((f) => f.owner !== player.id &&
+        game.relationship(player.id, f.owner) === 'enemy');
+    if (!armed.length) return false;
+    return armed.reduce((n, f) => n + f.units.forceGroundDamage(), 0) > king.units.get(SHIELD);
+}
+
+function evacuateKing(game, player, king) {
+    let best = null;
+    for (const nb of neighbors(king.x, king.y)) {
+        const t = game.getTower(nb);
+        if (!t || t.owner !== player.id || !t.active) continue;
+        if (!best || t.units.get(SHIELD) > best.units.get(SHIELD)) best = t;
+    }
+    if (!best) return;
+    game.deploy(player.id, king, [king.id, best.id]);
+}
+
+// ---- render.js ----
+// SPDX-FileCopyrightText: 2026 Kiomet clone contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Canvas renderer: roads, tower plinths, unit formations, force markers, territory halos.
+// Visual language follows Kiomet's client (client/src/layout.rs, client/src/road.rs,
+// client/src/color.rs).
+
+
+
+
+
+const COLORS = {
+    blue: [0x74, 0xb9, 0xff],
+    gray: [0x66, 0x66, 0x66],
+    purple: [0x86, 0x44, 0xfc],
+    red: [0xc0, 0x39, 0x2b],
+    me: [0x74, 0xb9, 0xff],
+    ally: [0x86, 0x44, 0xfc],
+    enemy: [0xc0, 0x39, 0x2b],
+    neutral: [0x66, 0x66, 0x66],
+    road: 'rgba(150,160,175,0.55)',
+    roadHi: 'rgba(215,225,240,0.9)',
+};
+
+// Tower art from Kiomet's own painting set (AGPL-3.0-or-later, Softbear, Inc.),
+// re-encoded to 64px transparent WebP.
+const BG = '#2d3436';
+
+class Camera {
+    constructor() { this.x = 0; this.y = 0; this.zoom = 18; }
+    toScreen(wx, wy, cw, ch) { return [(wx - this.x) * this.zoom + cw / 2, (wy - this.y) * this.zoom + ch / 2]; }
+    toWorld(sx, sy, cw, ch) { return [(sx - cw / 2) / this.zoom + this.x, (sy - ch / 2) / this.zoom + this.y]; }
+    clamp() {
+        this.zoom = Math.max(7, Math.min(64, this.zoom));
+        this.x = Math.max(0, Math.min(2560, this.x));
+        this.y = Math.max(0, Math.min(2560, this.y));
+    }
+}
+
+class Renderer {
+    constructor(canvas, icons) {
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        this.camera = new Camera();
+        // SvgColor: each glyph stroked in its owner's colour, cached per colour.
+        this.glyphCache = new Map();
+        this.dpr = Math.min(2, window.devicePixelRatio || 1);
+        this.resize();
+    }
+
+    resize() {
+        const r = this.canvas.getBoundingClientRect();
+        this.cw = r.width; this.ch = r.height;
+        this.canvas.width = Math.round(r.width * this.dpr);
+        this.canvas.height = Math.round(r.height * this.dpr);
+    }
+
+    // Which towers should be drawn: everything within the view plus any owned tower.
+    draw(game, view) {
+        const ctx = this.ctx;
+        const { cw, ch } = this;
+        ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+        ctx.fillStyle = BG;
+        ctx.fillRect(0, 0, cw, ch);
+
+        const zoom = this.camera.zoom;
+        // World-space bounds of the viewport plus a margin.
+        const [wx0, wy0] = this.camera.toWorld(-80, -80, cw, ch);
+        const [wx1, wy1] = this.camera.toWorld(cw + 80, ch + 80, cw, ch);
+        const lo = { x: Math.floor(wx0 / 5) - 2, y: Math.floor(wy0 / 5) - 2 };
+        const hi = { x: Math.ceil(wx1 / 5) + 2, y: Math.ceil(wy1 / 5) + 2 };
+
+        const visible = [];
+        for (const t of game.towers.values()) {
+            if (t.x < lo.x || t.y < lo.y || t.x > hi.x || t.y > hi.y) continue;
+            visible.push(t);
+        }
+
+        this.drawTerritory(ctx, game, visible);
+        this.drawRoads(ctx, game, visible);
+        this.drawPaths(ctx, game, view);
+        this.drawTowers(ctx, game, visible, view);
+        this.drawForces(ctx, game, view);
+        this.drawSelection(ctx, game, view);
+    }
+
+    colorFor(game, owner, view) {
+        if (owner == null) return COLORS.neutral;
+        if (view && owner === view.playerId) return COLORS.me;
+        if (view && view.allies && view.allies.has(owner)) return COLORS.ally;
+        return COLORS.enemy;
+    }
+
+    drawTerritory(ctx, game, visible) {
+        const z = this.camera.zoom;
+        const r = Math.max(12, z * 2.2);
+        ctx.save();
+        ctx.globalAlpha = 0.10;
+        for (const t of visible) {
+            if (t.owner == null) continue;
+            const c = this.colorFor(game, t.owner, game.view);
+            const [sx, sy] = this.camera.toScreen(integerPosition(t.x, t.y)[0], integerPosition(t.x, t.y)[1], this.cw, this.ch);
+            const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
+            g.addColorStop(0, `rgba(${c[0]},${c[1]},${c[2]},0.55)`);
+            g.addColorStop(1, `rgba(${c[0]},${c[1]},${c[2]},0)`);
+            ctx.fillStyle = g;
+            ctx.fillRect(sx - r, sy - r, r * 2, r * 2);
+        }
+        ctx.restore();
+    }
+
+    drawRoads(ctx, game, visible) {
+        const seen = new Set();
+        ctx.lineWidth = Math.max(1, this.camera.zoom * 0.055);
+        ctx.strokeStyle = COLORS.road;
+        ctx.beginPath();
+        for (const t of visible) {
+            const a = integerPosition(t.x, t.y);
+            for (const nb of neighbors(t.x, t.y)) {
+                const k1 = t.y * 512 + t.x, k2 = nb.y * 512 + nb.x;
+                const kk = k1 < k2 ? k1 * 262144 + k2 : k2 * 262144 + k1;
+                if (seen.has(kk)) continue;
+                seen.add(kk);
+                if (!game.getTower(nb)) continue;
+                const b = integerPosition(nb.x, nb.y);
+                const [x1, y1] = this.camera.toScreen(a[0], a[1], this.cw, this.ch);
+                const [x2, y2] = this.camera.toScreen(b[0], b[1], this.cw, this.ch);
+                ctx.moveTo(x1, y1);
+                ctx.lineTo(x2, y2);
+            }
+        }
+        ctx.stroke();
+    }
+
+    drawPaths(ctx, game, view) {
+        if (!view) return;
+        // Supply lines of the player and hovered drag preview.
+        ctx.save();
+        ctx.setLineDash([6, 5]);
+        ctx.lineWidth = 1.5;
+        for (const t of game.towers.values()) {
+            if (!t.supply || t.owner !== view.playerId) continue;
+            const p0 = integerPosition(t.x, t.y);
+            ctx.strokeStyle = 'rgba(116,185,255,0.75)';
+            ctx.beginPath();
+            let prev = p0;
+            const [x0, y0] = this.camera.toScreen(prev[0], prev[1], this.cw, this.ch);
+            ctx.moveTo(x0, y0);
+            for (let i = 1; i < t.supply.length; i++) {
+                const p = integerPosition(t.supply[i].x, t.supply[i].y);
+                const [x, y] = this.camera.toScreen(p[0], p[1], this.cw, this.ch);
+                ctx.lineTo(x, y);
+                prev = p;
+            }
+            ctx.stroke();
+        }
+        ctx.restore();
+
+        if (view.dragPath && view.dragPath.length > 1) {
+            ctx.save();
+            ctx.lineWidth = Math.max(2, this.camera.zoom * 0.09);
+            ctx.strokeStyle = view.dragValid === false ? 'rgba(230,120,60,0.75)' : 'rgba(235,245,255,0.85)';
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            for (let i = 0; i < view.dragPath.length; i++) {
+                const p = integerPosition(view.dragPath[i].x, view.dragPath[i].y);
+                const [x, y] = this.camera.toScreen(p[0], p[1], this.cw, this.ch);
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+            ctx.restore();
+        }
+    }
+
+    drawTowers(ctx, game, visible, view) {
+        const z = this.camera.zoom;
+        const size = Math.max(10, z * 1.25);
+        for (const t of visible) {
+            const a = integerPosition(t.x, t.y);
+            const [sx, sy] = this.camera.toScreen(a[0], a[1], this.cw, this.ch);
+            const c = this.colorFor(game, t.owner, view);
+
+            // Plinth.
+            ctx.beginPath();
+            ctx.arc(sx, sy + size * 0.30, size * 0.46, 0, Math.PI * 2);
+            ctx.fillStyle = t.owner == null ? 'rgba(30,34,36,0.75)'
+                : `rgba(${this.shade(c, 0.45)},0.9)`;
+            ctx.fill();
+
+            // A faint owner ring behind the glyph (the glyph itself is a DOM <img>).
+            if (t.owner != null) {
+                ctx.beginPath();
+                ctx.arc(sx, sy - size * 0.42, size * 0.62, 0, Math.PI * 2);
+                ctx.strokeStyle = `rgba(${this.shade(c, 1.2)},0.35)`;
+                ctx.lineWidth = Math.max(1, size * 0.06);
+                ctx.stroke();
+            }
+
+            // Selection / hover ring.
+            if (view && view.selected && view.selected.x === t.x && view.selected.y === t.y) {
+                ctx.beginPath();
+                ctx.arc(sx, sy + size * 0.30, size * 0.58, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+
+            // Unit badges under the tower.
+            if (z > 11) this.drawUnits(ctx, t, sx, sy + size * 0.30, size);
+
+            // Delay / EMP indicator.
+            if (t.delay > 0) {
+                ctx.globalAlpha = 0.45;
+                ctx.fillStyle = '#1b1f21';
+                ctx.beginPath();
+                ctx.arc(sx, sy - size * 0.36, size * 0.42, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+                ctx.fillStyle = '#ffd166';
+                ctx.font = `${Math.max(9, size * 0.34)}px system-ui, sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.fillText(Math.ceil(t.delay / 4) + 's', sx, sy - size * 0.28);
+            }
+        }
+    }
+
+    drawUnits(ctx, t, cx, cy, size) {
+        const counts = t.units.counts();
+        if (!counts.length) return;
+        const cap = {};
+        for (const [u] of counts) cap[u] = t.units.capacity(u, t.type);
+        // Shields as a ring, the rest as a compact bar of pips.
+        const shield = t.units.get(SHIELD);
+        if (shield) {
+            const max = Math.max(1, t.units.capacity(SHIELD, t.type));
+            const r = size * 0.36;
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(150,175,220,0.35)';
+            ctx.lineWidth = Math.max(1.5, size * 0.09);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * Math.min(1, shield / max));
+            ctx.strokeStyle = 'rgba(180,205,255,0.95)';
+            ctx.stroke();
+        }
+        const rest = counts.filter(([u]) => u !== SHIELD);
+        if (!rest.length) return;
+        const total = rest.reduce((n, [, c]) => n + c, 0);
+        const maxBar = size * 1.05;
+        const w = Math.min(maxBar, Math.max(size * 0.16, Math.sqrt(total) * size * 0.10));
+        let x = cx - w / 2;
+        const y = cy + size * 0.10;
+        const h = Math.max(2, size * 0.10);
+        for (const [u, c] of rest) {
+            const frac = c / total;
+            ctx.fillStyle = UNIT_TINT[u] || '#dfe6ee';
+            ctx.fillRect(x, y, Math.max(1.5, w * frac - 1), h);
+            x += w * frac;
+        }
+    }
+
+    drawForces(ctx, game, view) {
+        const z = this.camera.zoom;
+        const r = Math.max(3, z * 0.22);
+        for (const f of game.forces) {
+            if (f.idx >= f.path.length - 1) continue;   // already parked somewhere
+            const [wx, wy] = f.position(0);
+            const [sx, sy] = this.camera.toScreen(wx, wy, this.cw, this.ch);
+            if (sx < -40 || sy < -40 || sx > this.cw + 40 || sy > this.ch + 40) continue;
+            const c = this.colorFor(game, f.owner, view);
+            ctx.beginPath();
+            ctx.arc(sx, sy, r, 0, Math.PI * 2);
+            ctx.fillStyle = f.owner == null ? 'rgba(120,120,120,0.85)' : `rgb(${this.shade(c, 1.05)})`;
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            if (z > 13) {
+                const n = f.units.counts().reduce((s, [, c2]) => s + c2, 0);
+                ctx.fillStyle = 'rgba(20,24,26,0.85)';
+                ctx.font = `bold ${Math.max(8, r * 1.15)}px system-ui, sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.fillText(String(n), sx, sy - r * 1.4);
+            }
+        }
+    }
+
+    drawSelection(ctx, game, view) {
+        if (!view || !view.selected) return;
+        const t = game.getTower(view.selected);
+        if (!t) return;
+        const z = this.camera.zoom;
+        const a = integerPosition(t.x, t.y);
+        const [sx, sy] = this.camera.toScreen(a[0], a[1], this.cw, this.ch);
+        ctx.beginPath();
+        ctx.arc(sx, sy + z * 0.30, z * 0.95, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+
+    // SVG glyph for a tower type, stroked in `color`. Cached per (type, colour).
+    glyph(type, color) {
+        const key = type + ':' + color.join(',');
+        let img = this.glyphCache.get(key);
+        if (!img) {
+            const svg = (TOWER_SVG[type] || '')
+                .replace(/stroke="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?"/g, `stroke="rgb(${color.join(',')})"`);
+            img = new Image();
+            img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
+            this.glyphCache.set(key, img);
+        }
+        return img;
+    }
+
+    shade(c, k) {
+        return [c[0], c[1], c[2]].map((v) => Math.max(0, Math.min(255, Math.round(v * k)))).join(',');
+    }
+}
+
+const UNIT_TINT = {
+    [UNIT_ID.Fighter]: '#7fd1ff',
+    [UNIT_ID.Chopper]: '#9be15d',
+    [UNIT_ID.Bomber]: '#ffd166',
+    [UNIT_ID.Tank]: '#f2a65a',
+    [UNIT_ID.Soldier]: '#e8eef6',
+    [UNIT_ID.Shell]: '#ff9f1c',
+    [UNIT_ID.Emp]: '#4cc9f0',
+    [UNIT_ID.Nuke]: '#ff4d4d',
+    [UNIT_ID.King]: '#ffd700',
+};
+
+// ---- app.js ----
+// SPDX-FileCopyrightText: 2026 Kiomet clone contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Game loop, input handling and DOM overlays (tower menu, alerts, leaderboard, dialogs).
+
+
+
+
+
+
+
+
+const LABEL = {
+    Ews: 'EWS', Emp: 'EMP', Ruler: 'King',
+};
+
+const D = (id) => document.getElementById(id);
+const el = (tag, cls, html) => {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (html != null) e.innerHTML = html;
+    return e;
+};
+const fmt = (n) => String(n);
+
+class App {
+    constructor() {
+        this.canvas = D('canvas');
+        this.renderer = new Renderer(this.canvas);
+        this.camera = this.renderer.camera;
+        this.name = localStorage.getItem('kiomet-name') || 'Guesty';
+        this.godMode = localStorage.getItem('kiomet-god') === '1';
+        this.speed = 1;
+        this.paused = false;
+        this.selected = null;
+        this.drag = null;               // {from, to, startTime, path}
+        this.pan = null;
+        this.pinching = null;
+        this.keys = new Set();
+        this.lastFrame = performance.now();
+        this.acc = 0;
+        this.game = null;
+        this.newGame();
+        this.bindInput();
+        this.bindUi();
+        requestAnimationFrame((t) => this.frame(t));
+    }
+
+    // ---------------- game lifecycle ----------------
+    newGame(keepName) {
+        const me = new Player(0, this.name, { rank: 3 });
+        this.me = me;
+        const bots = [];
+        const botNames = ['Borus', 'Cynder', 'Draven', 'Eldra', 'Fenn', 'Grim', 'Hollis', 'Isolde',
+            'Jorik', 'Kael', 'Lysa', 'Mira', 'Nyx', 'Orin', 'Perrin', 'Quill'];
+        for (let i = 0; i < 9; i++) {
+            const n = botNames[(i * 5 + Math.floor(Math.random() * 16)) % botNames.length];
+            bots.push(new Player(i + 1, n + (i > 7 ? i : ''), { bot: true, rank: 1 }));
+        }
+        const game = new Game({
+            shrink: true,
+            botUpdate: (g, p) => {
+                if (p.id === 0) return;
+                botUpdate(g, p);
+            },
+        });
+        game.players = [me, ...bots];
+        game.onEvent = (e) => this.onGameEvent(e);
+        this.game = game;
+        game.spawnPlayer(me);
+        for (const b of bots) {
+            if (Math.random() < 0.75) game.spawnPlayer(b);
+        }
+        this.camera.x = 1280; this.camera.y = 1280; this.camera.zoom = 16;
+        if (me.rulerKey != null) this.panToKey(me.rulerKey, false);
+        this.selected = null;
+        this.renderMenu();
+        this.renderAlerts();
+        this.showDeath(false);
+    }
+
+    panToKey(k, animate = true) {
+        const t = this.game.towers.get(k);
+        if (!t) return;
+        const p = integerPosition(t.x, t.y);
+        this.camera.x = p[0]; this.camera.y = p[1];
+    }
+
+    centreOn(t) {
+        const p = integerPosition(t.x, t.y);
+        this.camera.x = p[0]; this.camera.y = p[1];
+    }
+
+    // ---------------- frame loop ----------------
+    frame(now) {
+        const dt = Math.min(0.25, (now - this.lastFrame) / 1000);
+        this.lastFrame = now;
+        if (!this.paused) {
+            this.acc += dt * this.speed;
+            let steps = 0;
+            while (this.acc >= 1 / TICK_HZ && steps < 8) {
+                this.game.tick();
+                this.acc -= 1 / TICK_HZ;
+                steps += 1;
+            }
+        }
+        this.handleKeyboardPan(dt);
+        // Icon overlay follows the camera; refresh it every frame like the canvas.
+        this.syncIcons();
+        this.renderer.draw(this.game, {
+            playerId: this.me.id,
+            allies: this.me.allies,
+            selected: this.selected,
+            dragPath: this.dragPath,
+            dragValid: this.dragValid,
+        });
+        this.updateHud();
+        if (this.selected) this.positionMenu();
+        requestAnimationFrame((t) => this.frame(t));
+    }
+
+    handleKeyboardPan(dt) {
+        const sp = 520 / this.camera.zoom * dt * 12;
+        let dx = 0, dy = 0;
+        if (this.keys.has('a') || this.keys.has('arrowleft')) dx -= sp;
+        if (this.keys.has('d') || this.keys.has('arrowright')) dx += sp;
+        if (this.keys.has('w') || this.keys.has('arrowup')) dy -= sp;
+        if (this.keys.has('s') || this.keys.has('arrowdown')) dy += sp;
+        if (dx || dy) {
+            this.camera.x += dx; this.camera.y += dy; this.camera.clamp();
+        }
+    }
+
+    // ---------------- input ----------------
+    bindInput() {
+        const cv = this.canvas;
+        cv.addEventListener('contextmenu', (e) => e.preventDefault());
+
+        cv.addEventListener('pointerdown', (e) => {
+            cv.setPointerCapture(e.pointerId);
+            this.pointers = this.pointers || new Map();
+            this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (this.pointers.size === 2) {
+                const [a, b] = [...this.pointers.values()];
+                this.pinching = { d: Math.hypot(a.x - b.x, a.y - b.y), zoom: this.camera.zoom };
+                this.drag = null;
+                return;
+            }
+            if (e.button === 2 || e.shiftKey) {
+                this.pan = { x: e.clientX, y: e.clientY, cx: this.camera.x, cy: this.camera.y };
+                return;
+            }
+            const [wx, wy] = this.camera.toWorld(e.clientX, e.clientY, this.renderer.cw, this.renderer.ch);
+            const t = this.towerAtWorld(wx, wy);
+            if (t && t.owner === this.me.id) {
+                this.drag = { from: t, startX: e.clientX, startY: e.clientY, path: null, moved: false };
+            }
+        });
+
+        cv.addEventListener('pointermove', (e) => {
+            if (this.pointers && this.pointers.has(e.pointerId)) {
+                this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            }
+            if (this.pinching && this.pointers.size >= 2) {
+                const [a, b] = [...this.pointers.values()];
+                const d = Math.hypot(a.x - b.x, a.y - b.y);
+                this.camera.zoom = Math.max(7, Math.min(64, this.pinching.zoom * (d / this.pinching.d)));
+                return;
+            }
+            if (this.pan) {
+                this.camera.x = this.pan.cx - (e.clientX - this.pan.x) / this.camera.zoom;
+                this.camera.y = this.pan.cy - (e.clientY - this.pan.y) / this.camera.zoom;
+                this.camera.clamp();
+                return;
+            }
+            if (this.drag) {
+                this.updateDrag(e);
+            }
+        });
+
+        const end = (e) => {
+            if (this.pointers) this.pointers.delete(e.pointerId);
+            if (this.pointers && this.pointers.size < 2) this.pinching = null;
+            if (this.pan) { this.pan = null; return; }
+            if (this.drag) this.finishDrag(e);
+        };
+        cv.addEventListener('pointerup', end);
+        cv.addEventListener('pointercancel', end);
+
+        cv.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const [wx, wy] = this.camera.toWorld(e.clientX, e.clientY, this.renderer.cw, this.renderer.ch);
+            const f = Math.exp(-e.deltaY * 0.0015);
+            this.camera.zoom = Math.max(7, Math.min(64, this.camera.zoom * f));
+            const [nx, ny] = this.camera.toWorld(e.clientX, e.clientY, this.renderer.cw, this.renderer.ch);
+            this.camera.x += wx - nx; this.camera.y += wy - ny;
+            this.camera.clamp();
+        }, { passive: false });
+
+        addEventListener('pointermove', (e) => {
+            // Drag preview continues even if the pointer leaves the canvas.
+            if (this.drag) this.updateDrag(e);
+        });
+
+        addEventListener('keydown', (e) => {
+            const k = e.key.toLowerCase();
+            this.keys.add(k);
+            if (k === 'escape') { this.selected = null; this.renderMenu(); this.closeDialog(); }
+            if (k === 'h') this.panToKey(this.me.rulerKey);
+            if (k === 'q') { this.camera.zoom = Math.max(7, this.camera.zoom / 1.2); }
+            if (k === 'e') { this.camera.zoom = Math.min(64, this.camera.zoom * 1.2); }
+            if (k === 'r') this.showSupplyLines = !this.showSupplyLines;
+            if (k === ' ') { e.preventDefault(); this.togglePause(); }
+        });
+        addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
+        addEventListener('resize', () => this.renderer.resize());
+    }
+
+    // Which tower is under the pointer? Each sprite stands on a jittered point inside its
+    // 5x5 world cell, so search the neighbouring cells and take the nearest *cell centre*
+    // (the same point the sprite is drawn around); a generous tap radius keeps fat fingers
+    // working without ever stealing the tap from a closer neighbour.
+    towerAtWorld(wx, wy) {
+        let best = null, bestD = Infinity;
+        const cx = Math.round(wx / 5), cy = Math.round(wy / 5);
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                const t = this.game.tower(cx + dx, cy + dy);
+                if (!t) continue;
+                const d = Math.hypot(t.x * 5 - wx, t.y * 5 - wy);
+                if (d < bestD) { best = t; bestD = d; }
+            }
+        }
+        if (!best) return null;
+        const tapRadius = Math.max(3, Math.min(6, 34 / this.camera.zoom));
+        return bestD <= tapRadius ? best : null;
+    }
+
+    updateDrag(e) {
+        const [wx, wy] = this.camera.toWorld(e.clientX, e.clientY, this.renderer.cw, this.renderer.ch);
+        if (Math.hypot(e.clientX - this.drag.startX, e.clientY - this.drag.startY) > 6) this.drag.moved = true;
+        const t = this.towerAtWorld(wx, wy);
+        this.drag.to = t;
+        if (!t || !this.drag.moved) { this.dragPath = null; return; }
+        const maxEdge = this.drag.from.forceUnits().maxEdgeDistance();
+        const path = this.game.findBestPath(this.drag.from.id, t.id, maxEdge, this.me.id);
+        this.drag.path = path;
+        this.dragPath = path || [this.drag.from.id, t.id];
+        this.dragValid = !!path;
+    }
+
+    finishDrag(e) {
+        const drag = this.drag;
+        this.drag = null;
+        this.dragPath = null;
+        if (!drag.moved) {
+            // A click: select the tower / close the menu.
+            this.selectTower(drag.from);
+            return;
+        }
+        if (!drag.to) return;
+        const path = drag.path;
+        if (!path) return;
+        const src = drag.from;
+        const sameAsSelection = this.selected && this.selected.x === src.x && this.selected.y === src.y;
+        const err = sameAsSelection
+            ? this.game.setSupplyLine(this.me.id, src.id, path)
+            : this.game.deploy(this.me.id, src.id, path);
+        if (err) this.toast(err);
+    }
+
+    selectTower(t) {
+        if (this.selected && this.selected.x === t.x && this.selected.y === t.y) {
+            this.selected = null;
+        } else {
+            this.selected = { x: t.x, y: t.y };
+        }
+        this.renderMenu();
+    }
+
+    // ---------------- menu ----------------
+    positionMenu() {
+        const menu = D('tower-menu');
+        const t = this.game.getTower(this.selected);
+        if (!t) { this.selected = null; menu.classList.add('hidden'); return; }
+        const p = integerPosition(t.x, t.y);
+        const [sx, sy] = this.camera.toScreen(p[0], p[1], this.renderer.cw, this.renderer.ch);
+        const w = menu.offsetWidth || 200, h = menu.offsetHeight || 120;
+        let left = sx + 18, top = sy - h / 2;
+        if (left + w > this.renderer.cw - 8) left = sx - w - 18;
+        top = Math.max(8, Math.min(this.renderer.ch - h - 8, top));
+        menu.style.left = left + 'px';
+        menu.style.top = top + 'px';
+    }
+
+    renderMenu() {
+        const menu = D('tower-menu');
+        menu.innerHTML = '';
+        const t = this.selected ? this.game.getTower(this.selected) : null;
+        if (!t) { menu.classList.add('hidden'); return; }
+        menu.classList.remove('hidden');
+
+        const isMine = t.owner === this.me.id;
+        const type = TOWER[t.type];
+        const head = el('div', 'tm-head');
+        head.appendChild(el('img', 'tm-icon', ''));
+        head.querySelector('img').src = this.svgUrl(t.type, 'rgb(116,185,255)');
+        head.appendChild(el('span', 'tm-title', LABEL[t.type] || t.type));
+        if (t.owner != null) {
+            const p = this.game.players[t.owner];
+            head.appendChild(el('span', 'tm-owner', p ? p.name : ''));
+        }
+        menu.appendChild(head);
+
+        if (t.delay > 0) {
+            menu.appendChild(el('div', 'tm-delay', `Upgrading… ${Math.ceil(t.delay / TICK_HZ)}s`));
+        }
+
+        // Unit rows (only what the tower can make, or already holds).
+        const rows = el('div', 'tm-units');
+        for (const [u, c] of t.units.counts()) {
+            const cap = t.units.capacity(u, t.type);
+            rows.appendChild(this.unitRow(u, c, cap));
+        }
+        for (const name of Object.keys(type.gen)) {
+            const u = UNIT_ID[name];
+            if (c2(t, u)) continue;
+            rows.appendChild(this.unitRow(u, 0, t.units.capacity(u, t.type)));
+        }
+        if (t.units.hasRuler()) rows.appendChild(this.unitRow(RULER, 1, 1));
+        menu.appendChild(rows);
+
+        if (isMine && t.active) {
+            const ups = el('div', 'tm-ups');
+            const opts = [...TOWER[t.type].upgrades];
+            if (type.basis !== t.type) opts.push(type.basis);
+            for (const name of opts) {
+                const up = TOWER[name];
+                const down = name === type.basis;
+                const ok = down ? true : meetsPrereqs(name, this.me.towerCounts);
+                const row = el('button', 'tm-up' + (down ? ' down' : '') + (ok ? '' : ' locked'));
+                row.title = (down ? 'Downgrade to ' : 'Upgrade to ') + name;
+                const ic = el('img', 'tm-up-icon');
+                ic.src = this.svgUrl(name, down ? 'rgb(192,57,43)' : 'rgb(116,185,255)');
+                row.appendChild(ic);
+                if (!down) {
+                    const req = el('div', 'tm-req');
+                    for (const [pre, n] of up.prereqs) {
+                        const have = this.me.towerCounts[pre] || 0;
+                        const r = el('span', 'tm-req-item' + (have >= n ? ' ok' : ''));
+                        const im = el('img', 'tm-req-icon');
+                        im.src = this.svgUrl(pre, have >= n ? 'rgb(116,185,255)' : 'rgb(150,150,150)');
+                        r.appendChild(im);
+                        r.appendChild(el('b', '', `${have}/${n}`));
+                        req.appendChild(r);
+                    }
+                    row.appendChild(req);
+                }
+                row.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    if (!ok) { this.toast('Missing prerequisite'); return; }
+                    const err = this.game.upgradeTower(this.me.id, t.id, name);
+                    if (err) this.toast(err);
+                    else this.renderMenu();
+                });
+                ups.appendChild(row);
+            }
+            menu.appendChild(ups);
+
+            if (t.supply) {
+                const b = el('button', 'tm-btn', 'Cancel supply line');
+                b.addEventListener('click', () => {
+                    this.game.setSupplyLine(this.me.id, t.id, null);
+                    this.renderMenu();
+                });
+                menu.appendChild(b);
+            }
+            menu.appendChild(el('div', 'tm-hint', t.generatesMobile()
+                ? 'Drag to send units. Select first, then drag to set a supply line.'
+                : 'Drag to send units.'));
+        } else if (t.owner != null && t.owner !== this.me.id) {
+            const p = this.game.players[t.owner];
+            const allied = this.me.allies.has(t.owner);
+            const pending = p && p.allies.has(this.me.id) && !allied;
+            const b = el('button', 'tm-btn' + (allied ? ' danger' : ''),
+                allied ? 'Break alliance' : (pending ? 'Accept alliance' : 'Request alliance'));
+            b.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                this.game.requestAlliance(this.me.id, t.owner);
+                this.renderMenu();
+            });
+            menu.appendChild(b);
+        } else {
+            menu.appendChild(el('div', 'tm-hint', t.owner == null ? 'Unowned' : ''));
+        }
+
+        this.positionMenu();
+    }
+
+    svgUrl(type, color) {
+        const svg = (TOWER_SVG[type] || '').replace(/stroke="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?"/g, `stroke="${color}"`);
+        return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
+    }
+
+    unitRow(u, count, cap) {
+        const row = el('div', 'tm-unit');
+        row.title = LABEL[UNITS[u].name] || UNITS[u].name;
+        const badge = el('span', 'unit-' + UNITS[u].name.toLowerCase());
+        row.appendChild(badge);
+        row.appendChild(el('span', 'tm-count', `${count}/${cap}`));
+        if (TOWER_GEN_HINT[u]) row.appendChild(el('span', 'tm-gen', TOWER_GEN_HINT[u]));
+        return row;
+    }
+
+    // ---------------- icon overlay ----------------
+    // Towers are drawn as absolutely positioned <img> elements: crisp SVG at any zoom, and
+    // it sidesteps canvas quirks entirely.
+    syncIcons() {
+        if (!this.iconLayer) {
+            this.iconLayer = D('icons');
+            this.iconEls = new Map();
+        }
+        const z = this.camera.zoom;
+        const { cw, ch } = this.renderer;
+        const size = Math.max(14, z * 1.35);
+        const seen = new Set();
+        const padX = cw / 2 / z + 4, padY = ch / 2 / z + 4;
+        for (const t of this.game.towers.values()) {
+            const wp = integerPosition(t.x, t.y);
+            const wx = wp[0], wy = wp[1];
+            if (Math.abs(wx - this.camera.x) > padX || Math.abs(wy - this.camera.y) > padY) continue;
+            const k = t.y * 512 + t.x;
+            seen.add(k);
+            const [sx, sy] = this.camera.toScreen(wx, wy, cw, ch);
+            let el = this.iconEls.get(k);
+            if (!el) {
+                el = document.createElement('img');
+                el.className = 'tico';
+                this.iconLayer.appendChild(el);
+                this.iconEls.set(k, el);
+            }
+            const c = this.colorForRgb(t.owner);
+            const key = t.type + c.join(',');
+            if (el.dataset.key !== key) {
+                el.src = this.svgUrl(t.type, `rgb(${c.join(',')})`);
+                el.dataset.key = key;
+            }
+            el.style.width = size + 'px';
+            el.style.height = size + 'px';
+            el.style.left = (sx - size / 2) + 'px';
+            el.style.top = (sy - size * 0.95) + 'px';
+            el.style.opacity = t.owner == null ? 0.85 : 1;
+        }
+        for (const [k, el] of this.iconEls) {
+            if (!seen.has(k)) { el.remove(); this.iconEls.delete(k); }
+        }
+    }
+
+    colorForRgb(owner) {
+        if (owner == null) return COLORS.neutral;
+        if (owner === this.me.id) return COLORS.me;
+        if (this.me.allies.has(owner)) return COLORS.ally;
+        return COLORS.enemy;
+    }
+
+    // ---------------- HUD ----------------
+    updateHud() {
+        const me = this.me;
+        D('score').textContent = fmt(me.score);
+        D('towers-n').textContent = fmt(me.towers.size);
+        const rank = document.querySelectorAll('#leaderboard .lb-row');
+        const rows = this.game.players
+            .filter((p) => p.alive || p.id === me.id)
+            .map((p) => ({ p, score: p.id === me.id ? me.score : p.score, n: p.towers.size }))
+            .sort((a, b) => b.score - a.score || b.n - a.n)
+            .slice(0, 10);
+        const lb = D('leaderboard');
+        let html = '<div class="lb-head">Leaderboard</div>';
+        rows.forEach((r, i) => {
+            const mine = r.p.id === me.id;
+            const col = this.colorCss(r.p.id);
+            html += `<div class="lb-row${mine ? ' me' : ''}"><span class="lb-n">${i + 1}.</span>` +
+                `<span class="lb-dot" style="background:${col}"></span>` +
+                `<span class="lb-name">${escapeHtml(r.p.name)}</span>` +
+                `<span class="lb-score">${r.score}</span></div>`;
+        });
+        html += `<div class="lb-foot">${fmt(this.game.towers.size)} towers · ${this.game.players.filter((p) => p.alive).length} players</div>`;
+        lb.innerHTML = html;
+        D('alive-dot').style.background = me.alive ? '#74b9ff' : '#c0392b';
+    }
+
+    colorCss(owner) {
+        const c = owner === this.me.id ? COLORS.me : this.me.allies.has(owner) ? COLORS.ally : COLORS.enemy;
+        return `rgb(${c[0]},${c[1]},${c[2]})`;
+    }
+
+    // ---------------- alerts ----------------
+    onGameEvent(e) {
+        if (e.type === 'ruler' && e.player === this.me.id) {
+            this.alerts.unshift({ text: 'Your King was killed!', sub: '', kind: 'bad', until: performance.now() + 8000 });
+        }
+        if (e.type === 'died' && e.player === this.me.id) {
+            this.showDeath(true);
+        }
+    }
+
+    renderAlerts() { /* alerts are pushed in pushAlert */ }
+
+    pushAlert(text, sub, kind = 'info', ms = 7000) {
+        this.alerts = this.alerts || [];
+        if (this.alerts.some((a) => a.text === text)) return;
+        this.alerts.unshift({ text, sub, kind, until: performance.now() + ms });
+        this.renderAlertList();
+    }
+
+    renderAlertList() {
+        const box = D('alerts');
+        const now = performance.now();
+        this.alerts = (this.alerts || []).filter((a) => a.until > now);
+        box.innerHTML = '';
+        for (const a of this.alerts.slice(0, 4)) {
+            const row = el('div', 'alert ' + a.kind);
+            row.appendChild(el('span', 'alert-dot'));
+            const txt = el('div', 'alert-text');
+            txt.appendChild(el('div', 'alert-main', escapeHtml(a.text)));
+            if (a.sub) txt.appendChild(el('div', 'alert-sub', escapeHtml(a.sub)));
+            row.appendChild(txt);
+            const x = el('span', 'alert-x', '✘');
+            x.addEventListener('click', () => { a.until = 0; this.renderAlertList(); });
+            row.appendChild(x);
+            box.appendChild(row);
+        }
+    }
+
+    showDeath(anim) {
+        const spawn = D('spawn');
+        spawn.classList.toggle('hidden', this.me.alive);
+        if (!this.me.alive) {
+            const r = D('death-reason');
+            r.textContent = 'Your King was killed!';
+            r.classList.remove('hidden');
+        }
+    }
+
+    // ---------------- UI wiring ----------------
+    bindUi() {
+        this.alerts = [];
+        D('chat-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const input = D('chat-input');
+            const v = input.value.trim();
+            if (!v) return;
+            input.value = '';
+            this.chatLine(this.name, v, true);
+        });
+        D('play-btn').addEventListener('click', () => {
+            const name = D('name-input').value.trim().slice(0, 12) || 'Guesty';
+            this.name = name;
+            localStorage.setItem('kiomet-name', name);
+            this.newGame();
+        });
+        D('pause-btn').addEventListener('click', () => this.togglePause());
+        D('speed-btn').addEventListener('click', () => {
+            this.speed = this.speed === 1 ? 2 : this.speed === 2 ? 4 : 1;
+            D('speed-btn').textContent = this.speed + '×';
+            D('speed-btn').classList.toggle('active', this.speed !== 1);
+        });
+        D('god-btn').addEventListener('click', () => {
+            this.godMode = !this.godMode;
+            localStorage.setItem('kiomet-god', this.godMode ? '1' : '0');
+            D('god-btn').classList.toggle('active', this.godMode);
+            this.toast(this.godMode ? 'God mode on — your King cannot die' : 'God mode off');
+        });
+        D('god-btn').classList.toggle('active', this.godMode);
+        D('help-btn').addEventListener('click', () => this.openDialog('help'));
+        D('towers-btn').addEventListener('click', () => this.openDialog('towers'));
+        D('units-btn').addEventListener('click', () => this.openDialog('units'));
+        D('dialog-close').addEventListener('click', () => this.closeDialog());
+        D('newgame-btn').addEventListener('click', () => this.newGame());
+        D('zoom-in').addEventListener('click', () => { this.camera.zoom = Math.min(64, this.camera.zoom * 1.25); });
+        D('zoom-out').addEventListener('click', () => { this.camera.zoom = Math.max(7, this.camera.zoom / 1.25); });
+        D('center-btn').addEventListener('click', () => this.panToKey(this.me.rulerKey));
+        D('name-input').value = this.name;
+        setInterval(() => this.renderAlertList(), 500);
+        this.toast('Click a tower for its menu · drag from your towers to send units · H finds your King');
+    }
+
+    togglePause() {
+        this.paused = !this.paused;
+        D('pause-btn').textContent = this.paused ? '▶' : '❚❚';
+        D('pause-btn').classList.toggle('active', this.paused);
+    }
+
+    toast(text) {
+        this.pushAlert(text, '', 'info', 6000);
+    }
+
+    chatLine(who, text, mine) {
+        const box = D('chat-log');
+        const line = el('div', 'chat-line' + (mine ? ' mine' : ''));
+        line.appendChild(el('b', 'chat-name', escapeHtml(who)));
+        line.appendChild(el('span', 'chat-text', ' ' + escapeHtml(text)));
+        box.appendChild(line);
+        box.scrollTop = box.scrollHeight;
+    }
+
+    openDialog(which) {
+        const dlg = D('dialog');
+        const body = D('dialog-body');
+        dlg.classList.remove('hidden');
+        if (which === 'help') {
+            D('dialog-title').textContent = 'Help';
+            body.innerHTML = HELP_HTML;
+        } else if (which === 'towers') {
+            D('dialog-title').textContent = 'Towers';
+            body.innerHTML = towersHtml();
+        } else {
+            D('dialog-title').textContent = 'Units';
+            body.innerHTML = unitsHtml();
+        }
+    }
+
+    closeDialog() { D('dialog').classList.add('hidden'); }
+}
+
+function c2(t, u) { return t.units.get(u) > 0; }
+
+const TOWER_GEN_HINT = {};
+
+function towersHtml() {
+    let out = '<table class="tbl"><tr><th>Tower</th><th>Points</th><th>Generates</th><th>Holds</th><th>Upgrades from</th><th>Upgrades to</th></tr>';
+    for (const t of TOWERS) {
+        const gen = Object.entries(t.gen).map(([u, s]) => `${u} / ${s}s`).join(', ') || '—';
+        const cap = Object.entries(t.cap).map(([u, c]) => `${u} ${c}`).join(', ');
+        out += `<tr><td><b>${LABEL[t.name] || t.name}</b></td><td>${t.score}</td><td>${gen}</td>` +
+            `<td>${cap}</td><td>${t.down || (t.pre.length === 0 ? 'on the map' : '')}</td>` +
+            `<td>${t.upgrades.join(', ') || '—'}</td></tr>`;
+    }
+    return out + '</table>';
+}
+
+function unitsHtml() {
+    let out = '<table class="tbl"><tr><th>Unit</th><th>Speed</th><th>Damage</th><th>Notes</th></tr>';
+    const note = {
+        Shield: 'Absorbs damage first. Cannot move, except out of a Projector.',
+        Fighter: 'Shoots down air units.',
+        Chopper: 'Fast, carries soldiers and tanks.',
+        Bomber: 'Devastating against ground forces.',
+        Tank: 'Slow, hits three times as hard as a soldier.',
+        Soldier: 'The basic ground unit.',
+        Shell: 'Fired straight at a tower in range. Cannot capture.',
+        Emp: 'Shuts a tower down for a minute.',
+        Nuke: 'Wipes out everything in a tower.',
+        King: 'Cannot be replaced. Lose him and you lose.',
+    };
+    for (let u = 0; u < 10; u++) {
+        const n = UNITS[u].name;
+        out += `<tr><td>${LABEL[n] || n}</td><td>${UNITS[u].speed === 'shield' ? 'immobile' : UNITS[u].speed}</td>` +
+            `<td>${UNITS[u].damage === 31 ? '∞' : UNITS[u].damage}</td><td>${note[n]}</td></tr>`;
+    }
+    return out + '</table>';
+}
+
+const HELP_HTML = `
+<p><b>Drag</b> from one of your towers to another tower to send its units along the roads. They claim
+every empty tower on the way, fight whatever they meet, and keep going if they win. Shields stay behind
+to defend.</p>
+<p><b>Click</b> a tower to open its menu. Upgrades list the towers they require. While a tower is
+upgrading it makes nothing, sees no further than a mine and scores nothing.</p>
+<p><b>Supply lines:</b> click a tower that makes units, then drag from it. Whenever the tower fills up it
+sends its units down the line, and units arriving at a tower with its own supply line carry on along it.</p>
+<p><b>Protect your King.</b> When your King is captured you lose the game. Towers at and next to your
+King make units and shields twice as fast.</p>
+<p><b>Score</b> by holding towers. Mines, factories, quarries, towns, refineries and cities are worth more.</p>
+<p><b>Keys:</b> H finds your King, Q/E zoom, WASD or right-drag pans, R shows supply lines, Space pauses.</p>
+`;
+
+function escapeHtml(s) {
+    return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+window.kiomet = new App();
+
+// Fallback splash while the module graph loads.
+window.addEventListener('error', (e) => {
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;left:8px;bottom:8px;right:8px;background:#7f1d1d;color:#fff;padding:8px;border-radius:6px;font:12px monospace;z-index:999';
+  d.textContent = 'Error: ' + (e.message || e.error);
+  document.body.appendChild(d);
+});
+</script>
+
+</body>
+</html>

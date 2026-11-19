@@ -1,0 +1,12 @@
+{
+  "name": "kiomet-offline",
+  "version": "1.0.0",
+  "description": "Offline single-file clone of kiomet.com, ported from the AGPL-licensed upstream source",
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "private": true,
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test/engine.test.mjs"
+  }
+}

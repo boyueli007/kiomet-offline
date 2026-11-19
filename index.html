@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<!--
+  SPDX-FileCopyrightText: 2026 Kiomet clone contributors
+  SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Kiomet — 实时领地塔防</title>
+<style>
+:root{
+  --bg:#2d3436; --panel:#00000033; --panel-solid:#20282a; --text:#e8ecf1;
+  --blue:#74b9ff; --red:#c0392b; --purple:#8644fc; --gold:#ffd166;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--text);
+  font:14px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft Yahei",sans-serif;
+  user-select:none;-webkit-user-select:none}
+#app{position:absolute;inset:0;z-index:0}
+#topbar,#leaderboard,#alerts,#chat,#controls,#zoomctl,#tower-menu,#spawn,#dialog{position:absolute;z-index:2}
+#icons{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:1}
+.tico{position:absolute;will-change:left,top;filter:drop-shadow(0 1px 1px #0008)}
+#canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;z-index:0}
+.hidden{display:none!important}
+
+/* top bar */
+#topbar{position:absolute;left:0;right:0;top:0;display:flex;justify-content:center;gap:1.5rem;
+  padding:.4rem .75rem;pointer-events:none;font-size:.85rem;color:#cfd8e3}
+#topbar .stat{background:var(--panel);border-radius:.35rem;padding:.2rem .55rem;pointer-events:auto}
+#topbar b{color:#fff;font-size:.95rem}
+
+/* leaderboard */
+#leaderboard{position:absolute;right:.6rem;top:.6rem;min-width:11rem;max-width:24vw;
+  background:var(--panel);border-radius:.4rem;padding:.35rem .5rem;font-size:.8rem;backdrop-filter:blur(2px)}
+.lb-head{font-weight:600;opacity:.85;margin-bottom:.2rem;font-size:.78rem}
+.lb-row{display:flex;align-items:center;gap:.3rem;line-height:1.5;white-space:nowrap}
+.lb-row.me{color:#fff;font-weight:600}
+.lb-n{opacity:.6;width:1.2rem}
+.lb-dot{width:.5rem;height:.5rem;border-radius:50%}
+.lb-name{flex:1;overflow:hidden;text-overflow:ellipsis}
+.lb-score{font-variant-numeric:tabular-nums;opacity:.9}
+.lb-foot{margin-top:.25rem;opacity:.5;font-size:.72rem}
+
+/* alerts */
+#alerts{position:absolute;left:.6rem;top:.6rem;display:flex;flex-direction:column;gap:.3rem;
+  max-width:25%;pointer-events:none}
+.alert{display:flex;align-items:center;gap:.4rem;background:var(--panel);border-radius:.35rem;
+  padding:.3rem .45rem;font-size:.8rem;pointer-events:auto}
+.alert.bad{background:#c0392b55}
+.alert-dot{width:.45rem;height:.45rem;border-radius:50%;background:var(--blue);flex:none}
+.alert.bad .alert-dot{background:var(--red)}
+.alert-main{font-weight:600}
+.alert-sub{opacity:.75;font-size:.75rem}
+.alert-x{opacity:.6;cursor:pointer;margin-left:auto;padding-left:.3rem}
+
+/* chat */
+#chat{position:absolute;left:.6rem;bottom:.6rem;width:22rem;max-width:38vw;font-size:.8rem}
+#chat-log{max-height:8rem;overflow:auto;margin-bottom:.3rem;display:flex;flex-direction:column;gap:.15rem}
+.chat-line{background:var(--panel);border-radius:.3rem;padding:.2rem .4rem}
+.chat-line.mine .chat-name{color:var(--blue)}
+.chat-name{opacity:.8}
+#chat-form{display:flex;gap:.3rem}
+#chat-input{flex:1;background:#00000055;border:1px solid #ffffff22;border-radius:.3rem;color:var(--text);
+  padding:.3rem .45rem;font:inherit;outline:none}
+#chat-input:focus{border-color:var(--blue)}
+
+/* bottom right buttons */
+#controls{position:absolute;right:.6rem;bottom:.6rem;display:flex;gap:.35rem;flex-wrap:wrap;justify-content:flex-end}
+#controls button,#zoomctl button{background:var(--panel);border:1px solid #ffffff22;color:var(--text);
+  border-radius:.35rem;padding:.35rem .55rem;font:inherit;cursor:pointer}
+#controls button:hover,#zoomctl button:hover{background:#ffffff18}
+#controls button.active{background:#74b9ff33;border-color:var(--blue)}
+#zoomctl{position:absolute;right:.6rem;bottom:3.2rem;display:flex;gap:.35rem}
+
+/* tower menu */
+#tower-menu{position:absolute;z-index:20;min-width:11rem;max-width:16rem;background:#0f1416e6;
+  border:1px solid #ffffff26;border-radius:.45rem;padding:.5rem;font-size:.8rem;backdrop-filter:blur(3px);
+  box-shadow:0 6px 24px #0006}
+.tm-head{display:flex;align-items:center;gap:.35rem;margin-bottom:.35rem}
+.tm-icon{width:1.55rem;height:1.55rem;object-fit:contain}
+.tm-title{font-weight:700;font-size:.95rem}
+.tm-owner{margin-left:auto;opacity:.7;font-size:.75rem}
+.tm-delay{color:var(--gold);margin-bottom:.3rem}
+.tm-units{display:flex;flex-direction:column;gap:.15rem;margin-bottom:.4rem}
+.tm-unit{display:flex;align-items:center;gap:.35rem}
+.tm-count{font-variant-numeric:tabular-nums;opacity:.95}
+.tm-gen{margin-left:auto;opacity:.55;font-size:.72rem}
+.tm-ups{display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:.35rem}
+.tm-up{position:relative;display:flex;flex-direction:column;align-items:center;gap:.15rem;
+  width:3.6rem;padding:.25rem;border-radius:.35rem;border:1px solid #ffffff26;background:#74b9ff22;cursor:pointer}
+.tm-up:hover{background:#74b9ff33}
+.tm-up.down{background:#c0392b33}
+.tm-up.locked{opacity:.45;cursor:not-allowed}
+.tm-up-icon{width:1.9rem;height:1.9rem;object-fit:contain}
+.tm-req{display:flex;flex-direction:column;gap:.05rem;font-size:.68rem;opacity:.85}
+.tm-req-item{display:flex;align-items:center;gap:.15rem;white-space:nowrap}
+.tm-req-item.ok{color:#8fe3a0}
+.tm-req-icon{width:.85rem;height:.85rem;object-fit:contain}
+.tm-btn{width:100%;margin-top:.2rem;background:#00000055;border:1px solid #ffffff33;color:var(--text);
+  border-radius:.3rem;padding:.3rem;font:inherit;cursor:pointer}
+.tm-btn.danger{background:#c0392b44;border-color:#c0392b88}
+.dot{display:inline-block;width:.55rem;height:.55rem;border-radius:50%;background:var(--blue)}
+.tm-hint{margin-top:.3rem;opacity:.6;font-size:.72rem;line-height:1.3}
+
+/* unit badges */
+[class^="unit-"]{display:inline-block;width:.8rem;height:.8rem;border-radius:.15rem;flex:none}
+.unit-shield{background:#b4cdff;border-radius:50%}
+.unit-fighter{background:#7fd1ff;clip-path:polygon(50% 0,100% 100%,0 100%)}
+.unit-chopper{background:#9be15d;border-radius:.2rem .2rem .5rem .5rem}
+.unit-bomber{background:#ffd166;clip-path:polygon(0 40%,100% 50%,0 60%)}
+.unit-tank{background:#f2a65a;border-radius:.2rem}
+.unit-soldier{background:#e8eef6;border-radius:50% 50% 20% 20%}
+.unit-shell{background:#ff9f1c;clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%)}
+.unit-emp{background:#4cc9f0;clip-path:polygon(50% 0,60% 40%,100% 50%,60% 60%,50% 100%,40% 60%,0 50%,40% 40%)}
+.unit-nuke{background:#ff4d4d;border-radius:50%;box-shadow:0 0 4px #ff4d4d}
+.unit-king{background:var(--gold);clip-path:polygon(0 100%,10% 30%,35% 60%,50% 10%,65% 60%,90% 30%,100% 100%)}
+
+/* spawn overlay */
+#spawn{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:.8rem;background:radial-gradient(circle at 50% 45%,#00000000,#00000066);z-index:40}
+#spawn h1{margin:0;font-size:2.6rem;letter-spacing:.02em}
+#spawn h1 span{color:#a5a5a5;font-size:1.4rem}
+#spawn .sub{opacity:.8;margin:0}
+#spawn input{width:14rem;text-align:center;background:#00000055;border:1px solid #ffffff33;border-radius:.4rem;
+  color:#fff;padding:.45rem;font:inherit;outline:none}
+#spawn input:focus{border-color:var(--blue)}
+#play-btn{background:var(--blue);color:#0b1620;border:none;border-radius:.5rem;padding:.6rem 2.6rem;
+  font-size:1.15rem;font-weight:700;cursor:pointer;box-shadow:0 4px 18px #74b9ff55}
+#play-btn:hover{filter:brightness(1.08)}
+#death-reason{color:#ffb3a7;font-style:italic}
+
+/* dialogs */
+#dialog{position:absolute;inset:0;background:#00000088;display:flex;align-items:center;justify-content:center;z-index:50}
+#dialog .card{background:var(--panel-solid);border-radius:.6rem;padding:1rem 1.2rem;max-width:min(56rem,92vw);
+  max-height:82vh;overflow:auto;box-shadow:0 12px 40px #0008}
+#dialog .card h2{margin:0 0 .6rem}
+#dialog-close{float:right;background:#00000055;border:1px solid #ffffff33;color:var(--text);border-radius:.3rem;
+  padding:.15rem .5rem;cursor:pointer}
+.tbl{width:100%;border-collapse:collapse;font-size:.82rem}
+.tbl th,.tbl td{text-align:left;padding:.25rem .45rem;border-bottom:1px solid #ffffff14;vertical-align:top}
+.tbl th{opacity:.7;font-weight:600;position:sticky;top:0;background:var(--panel-solid)}
+
+/* small screens */
+@media (max-width:720px){
+  #leaderboard{font-size:.72rem;min-width:8.5rem}
+  #chat{width:14rem}
+  #chat-log{max-height:5rem}
+  #tower-menu{max-width:13rem;font-size:.76rem}
+  #spawn h1{font-size:2rem}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="canvas"></canvas>
+  <div id="icons"></div>
+
+  <div id="topbar">
+    <div class="stat">得分 <b id="score">0</b></div>
+    <div class="stat">塔 <b id="towers-n">0</b></div>
+    <div class="stat">生命 <b id="alive-dot" class="dot"></b></div>
+  </div>
+
+  <div id="alerts"></div>
+  <div id="leaderboard"></div>
+
+  <div id="chat">
+    <div id="chat-log"></div>
+    <form id="chat-form" autocomplete="off">
+      <input id="chat-input" maxlength="120" placeholder="说点什么…" autocomplete="off">
+    </form>
+  </div>
+
+  <div id="zoomctl">
+    <button id="zoom-out" title="缩小">−</button>
+    <button id="center-btn" title="找到我的国王">◎</button>
+    <button id="zoom-in" title="放大">+</button>
+  </div>
+
+  <div id="controls">
+    <button id="pause-btn" title="暂停">❚❚</button>
+    <button id="speed-btn" title="游戏速度">1×</button>
+    <button id="god-btn" title="无敌模式">无敌</button>
+    <button id="help-btn">帮助</button>
+    <button id="towers-btn">塔</button>
+    <button id="units-btn">单位</button>
+    <button id="newgame-btn">新游戏</button>
+  </div>
+
+  <div id="tower-menu" class="hidden"></div>
+
+  <div id="spawn" class="hidden">
+    <h1>Kiomet<span>.com</span></h1>
+    <p class="sub">实时领地塔防 · 单机复刻</p>
+    <input id="name-input" maxlength="12" placeholder="昵称" autocomplete="off">
+    <button id="play-btn">开始</button>
+    <div id="death-reason" class="hidden"></div>
+  </div>
+
+  <div id="dialog" class="hidden">
+    <div class="card">
+      <button id="dialog-close">关闭</button>
+      <h2 id="dialog-title">帮助</h2>
+      <div id="dialog-body"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Fallback splash while the module graph loads.
+window.addEventListener('error', (e) => {
+  const d = document.createElement('div');
+  d.style.cssText = 'position:fixed;left:8px;bottom:8px;right:8px;background:#7f1d1d;color:#fff;padding:8px;border-radius:6px;font:12px monospace;z-index:999';
+  d.textContent = 'Error: ' + (e.message || e.error);
+  document.body.appendChild(d);
+});
+</script>
+<script type="module">
+  import { App } from './src/app.js';
+  // One shared instance; expose it for debugging from the console.
+  window.kiomet = new App();
+</script>
+</body>
+</html>

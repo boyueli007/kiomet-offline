@@ -16,12 +16,13 @@ import { Visibility } from './fog.js';
 import { Effects } from './effects.js';
 import { AlertBoard } from './alerts.js';
 import { Renderer, COLORS } from './render.js';
-
-const LABEL = {
-    Ews: 'EWS', Emp: 'EMP', Ruler: 'King',
-};
+import {
+    LANGUAGES, t, tName, setLang, metaOf, resolveLang, langCodes, langCode,
+} from './i18n.js';
 
 const D = (id) => document.getElementById(id);
+// Defined by code point so the source file stays encoding-independent.
+const CLOSE_GLYPH = String.fromCharCode(0x2718);
 const el = (tag, cls, html) => {
     const e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -35,6 +36,8 @@ export class App {
         this.canvas = D('canvas');
         this.renderer = new Renderer(this.canvas);
         this.camera = this.renderer.camera;
+        // Language first: everything below looks up already-translated strings.
+        setLang(resolveLang());
         this.name = localStorage.getItem('kiomet-name') || 'Guesty';
         this.godMode = localStorage.getItem('kiomet-god') === '1';
         // Fog of war (on by default, like the real game). B toggles it, as upstream cheats do.
@@ -47,11 +50,13 @@ export class App {
         this.pinching = null;
         this.keys = new Set();
         this.lastFrame = performance.now();
+        this.lastFrameAt = this.lastFrame;
         this.acc = 0;
         this.game = null;
         this.newGame();
         this.bindInput();
         this.bindUi();
+        this.applyLanguage();
         requestAnimationFrame((t) => this.frame(t));
     }
 
@@ -111,13 +116,17 @@ export class App {
         this.lastFrame = now;
         if (!this.paused) {
             this.acc += dt * this.speed;
+            // Cap the catch-up steps: after a long stall (tab switch, heavy GC) running eight
+            // ticks in one frame turns a stumble into a freeze. Two is enough to stay smooth;
+            // the surplus is dropped and the clock stays in the past rather than snowballing.
             let steps = 0;
-            while (this.acc >= 1 / TICK_HZ && steps < 8) {
+            while (this.acc >= 1 / TICK_HZ && steps < 2) {
                 this.game.tick();
                 this.visibility.invalidate();
                 this.acc -= 1 / TICK_HZ;
                 steps += 1;
             }
+            if (this.acc > 1 / TICK_HZ) this.acc = 0;
         }
         this.handleKeyboardPan(dt);
         // Icon overlay follows the camera; refresh it every frame like the canvas.
@@ -143,7 +152,29 @@ export class App {
         this.effects.render(this.renderer.ctx, (x, y) => this.camera.toScreen(x, y, this.renderer.cw, this.renderer.ch), this.camera.zoom, dt);
         this.updateHud();
         if (this.selected) this.positionMenu();
+        this.trackFrameCost(now);
         requestAnimationFrame((t) => this.frame(t));
+    }
+
+    // Adaptive quality: if frames consistently exceed the budget, step the canvas resolution
+    // down; if there is plenty of headroom again, step it back up. This is the cheap version of
+    // what a real engine's dynamic-resolution scaler does, and it turns a machine that can't
+    // hold 60fps into a smooth lower-res render instead of a stuttering one.
+    trackFrameCost(now) {
+        const dtMs = now - this.lastFrameAt;
+        this.lastFrameAt = now;
+        if (!(dtMs > 0) || dtMs > 250) return;         // ignore tab-switch gaps
+        const ema = this.frameEma == null ? dtMs : this.frameEma * 0.9 + dtMs * 0.1;
+        this.frameEma = ema;
+        this.frameSamples = (this.frameSamples || 0) + 1;
+        if (this.frameSamples < 90) return;            // ~1.5s of evidence before reacting
+        this.frameSamples = 0;
+        const r = this.renderer;
+        if (ema > 22 && r.effectiveDpr > 0.75) {         // slower than ~45fps: drop resolution
+            r.setQualityScale(r.effectiveDpr * 0.85);
+        } else if (ema < 17.5 && r.effectiveDpr < r.qualityCap) {   // headroom: restore detail
+            r.setQualityScale(Math.min(r.qualityCap, r.effectiveDpr * 1.06));
+        }
     }
 
     closeMenuOnPan() {
@@ -207,7 +238,8 @@ export class App {
             if (this.effects.audio && this.effects.audio.state === 'suspended') this.effects.audio.resume();
             cv.setPointerCapture(e.pointerId);
             this.pointers = this.pointers || new Map();
-            this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            const [lx, ly] = this.renderer.eventToLocal(e);
+            this.pointers.set(e.pointerId, { x: lx, y: ly });
             if (this.pointers.size === 2) {
                 const [a, b] = [...this.pointers.values()];
                 this.pinching = { d: Math.hypot(a.x - b.x, a.y - b.y), zoom: this.camera.zoom };
@@ -215,21 +247,22 @@ export class App {
                 return;
             }
             if (e.button === 2 || e.shiftKey) {
-                this.pan = { x: e.clientX, y: e.clientY, cx: this.camera.x, cy: this.camera.y };
+                this.pan = { x: lx, y: ly, cx: this.camera.x, cy: this.camera.y };
                 return;
             }
-            const [wx, wy] = this.camera.toWorld(e.clientX, e.clientY, this.renderer.cw, this.renderer.ch);
+            const [wx, wy] = this.camera.toWorld(lx, ly, this.renderer.cw, this.renderer.ch);
             const t = this.towerAtWorld(wx, wy);
             this.drag = null;
             this.dragPath = null;
             if (t && t.owner === this.me.id) {
-                this.drag = { from: t, startX: e.clientX, startY: e.clientY, path: null, moved: false };
+                this.drag = { from: t, startX: lx, startY: ly, path: null, moved: false };
             }
         });
 
         cv.addEventListener('pointermove', (e) => {
+            const [lx, ly] = this.renderer.eventToLocal(e);
             if (this.pointers && this.pointers.has(e.pointerId)) {
-                this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+                this.pointers.set(e.pointerId, { x: lx, y: ly });
             }
             if (this.pinching && this.pointers.size >= 2) {
                 const [a, b] = [...this.pointers.values()];
@@ -238,8 +271,8 @@ export class App {
                 return;
             }
             if (this.pan) {
-                this.camera.x = this.pan.cx - (e.clientX - this.pan.x) / this.camera.zoom;
-                this.camera.y = this.pan.cy - (e.clientY - this.pan.y) / this.camera.zoom;
+                this.camera.x = this.pan.cx - (lx - this.pan.x) / this.camera.zoom;
+                this.camera.y = this.pan.cy - (ly - this.pan.y) / this.camera.zoom;
                 this.camera.clamp();
                 return;
             }
@@ -261,10 +294,11 @@ export class App {
 
         cv.addEventListener('wheel', (e) => {
             e.preventDefault();
-            const [wx, wy] = this.camera.toWorld(e.clientX, e.clientY, this.renderer.cw, this.renderer.ch);
+            const [lx, ly] = this.renderer.eventToLocal(e);
+            const [wx, wy] = this.camera.toWorld(lx, ly, this.renderer.cw, this.renderer.ch);
             const f = Math.exp(-e.deltaY * 0.0015);
             this.camera.zoom = Math.max(7, Math.min(64, this.camera.zoom * f));
-            const [nx, ny] = this.camera.toWorld(e.clientX, e.clientY, this.renderer.cw, this.renderer.ch);
+            const [nx, ny] = this.camera.toWorld(lx, ly, this.renderer.cw, this.renderer.ch);
             this.camera.x += wx - nx; this.camera.y += wy - ny;
             this.camera.clamp();
         }, { passive: false });
@@ -286,7 +320,7 @@ export class App {
             if (k === 'e') { this.camera.zoom = Math.min(64, this.camera.zoom * 1.2); }
             if (k === 'r' && !e.shiftKey) {
                 this.showSupplyLines = !this.showSupplyLines;
-                this.toast(this.showSupplyLines ? 'Showing all supply lines (R)' : 'Supply lines hidden');
+                this.toast(this.showSupplyLines ? 'toast.supplyOn' : 'toast.supplyOff');
             } else if (k === 'r' && e.shiftKey) {
                 this.clearSupplyLines();
             }
@@ -294,13 +328,19 @@ export class App {
             if (k === ' ') { e.preventDefault(); this.togglePause(); }
         });
         addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
+        // ResizeObserver also fires on CSS-driven box changes (zoom, sidebar, devtools),
+        // which plain `resize` misses and which silently desyncs taps from the canvas.
         addEventListener('resize', () => this.renderer.resize());
+        if (typeof ResizeObserver !== 'undefined') {
+            this.resizeObserver = new ResizeObserver(() => this.renderer.resize());
+            this.resizeObserver.observe(cv);
+        }
     }
 
     // Which tower is under the pointer? Each sprite stands on a jittered point inside its
-    // 5x5 world cell, so search the neighbouring cells and take the nearest *cell centre*
-    // (the same point the sprite is drawn around); a generous tap radius keeps fat fingers
-    // working without ever stealing the tap from a closer neighbour.
+    // 5x5 world cell, so search the neighbouring cells and compare against the *drawn* centre
+    // (integerPosition), not the raw cell coordinate 鈥?the jitter is up to a full cell, so
+    // using t.x*5 / t.y*5 picked the wrong tower and made taps miss the tower you saw.
     towerAtWorld(wx, wy) {
         let best = null, bestD = Infinity;
         const cx = Math.round(wx / 5), cy = Math.round(wy / 5);
@@ -308,7 +348,9 @@ export class App {
             for (let dx = -1; dx <= 1; dx++) {
                 const t = this.game.tower(cx + dx, cy + dy);
                 if (!t) continue;
-                const d = Math.hypot(t.x * 5 - wx, t.y * 5 - wy);
+                if (!this.isVisible(t)) continue;
+                const p = integerPosition(t.x, t.y);
+                const d = Math.hypot(p[0] - wx, p[1] - wy);
                 if (d < bestD) { best = t; bestD = d; }
             }
         }
@@ -318,8 +360,9 @@ export class App {
     }
 
     updateDrag(e) {
-        const [wx, wy] = this.camera.toWorld(e.clientX, e.clientY, this.renderer.cw, this.renderer.ch);
-        if (Math.hypot(e.clientX - this.drag.startX, e.clientY - this.drag.startY) > 6) this.drag.moved = true;
+        const [lx, ly] = this.renderer.eventToLocal(e);
+        const [wx, wy] = this.camera.toWorld(lx, ly, this.renderer.cw, this.renderer.ch);
+        if (Math.hypot(lx - this.drag.startX, ly - this.drag.startY) > 6) this.drag.moved = true;
         const t = this.towerAtWorld(wx, wy);
         if (t !== this.drag.to) this.drag.hoverSince = performance.now();
         this.drag.to = t;
@@ -358,7 +401,7 @@ export class App {
         const path = drag.path;
         if (!path) return;
         if (this.rulerNeedsConfirm(drag)) {
-            this.toast('Hold the pointer on the destination for a moment to send your King');
+            this.toast('toast.kingConfirm');
             return;
         }
         const src = drag.from;
@@ -382,9 +425,9 @@ export class App {
         const line = mine.find((t) => t.supply);
         if (line) {
             this.game.setSupplyLine(this.me.id, line.id, null);
-            this.toast('Supply line removed');
+            this.toast('toast.supplyRemoved');
         } else {
-            this.toast('No supply lines to remove');
+            this.toast('toast.supplyNone');
         }
     }
 
@@ -424,7 +467,7 @@ export class App {
         const head = el('div', 'tm-head');
         head.appendChild(el('img', 'tm-icon', ''));
         head.querySelector('img').src = this.svgUrl(t.type, 'rgb(116,185,255)');
-        head.appendChild(el('span', 'tm-title', LABEL[t.type] || t.type));
+        head.appendChild(el('span', 'tm-title', tName('tower', t.type)));
         if (t.owner != null) {
             const p = this.game.players[t.owner];
             head.appendChild(el('span', 'tm-owner', p ? p.name : ''));
@@ -432,7 +475,7 @@ export class App {
         menu.appendChild(head);
 
         if (t.delay > 0) {
-            menu.appendChild(el('div', 'tm-delay', `Upgrading… ${Math.ceil(t.delay / TICK_HZ)}s`));
+            menu.appendChild(el('div', 'tm-delay', t('menu.upgrading', { seconds: Math.ceil(t.delay / TICK_HZ) })));
         }
 
         // Unit rows (only what the tower can make, or already holds).
@@ -458,7 +501,7 @@ export class App {
                 const down = name === type.basis;
                 const ok = down ? true : meetsPrereqs(name, this.me.towerCounts);
                 const row = el('button', 'tm-up' + (down ? ' down' : '') + (ok ? '' : ' locked'));
-                row.title = (down ? 'Downgrade to ' : 'Upgrade to ') + name;
+                row.title = t(down ? 'menu.downgradeTo' : 'menu.upgradeTo', { tower: tName('tower', name) });
                 const ic = el('img', 'tm-up-icon');
                 ic.src = this.svgUrl(name, down ? 'rgb(192,57,43)' : 'rgb(116,185,255)');
                 row.appendChild(ic);
@@ -477,7 +520,7 @@ export class App {
                 }
                 row.addEventListener('click', (ev) => {
                     ev.stopPropagation();
-                    if (!ok) { this.toast('Missing prerequisite'); return; }
+                    if (!ok) { this.toast('toast.prereq'); return; }
                     const err = this.game.upgradeTower(this.me.id, t.id, name);
                     if (err) this.toast(err);
                     else { this.alertBoard.onUpgrade(); this.renderMenu(); }
@@ -487,22 +530,20 @@ export class App {
             menu.appendChild(ups);
 
             if (t.supply) {
-                const b = el('button', 'tm-btn', 'Cancel supply line');
+                const b = el('button', 'tm-btn', t('menu.cancelSupply'));
                 b.addEventListener('click', () => {
                     this.game.setSupplyLine(this.me.id, t.id, null);
                     this.renderMenu();
                 });
                 menu.appendChild(b);
             }
-            menu.appendChild(el('div', 'tm-hint', t.generatesMobile()
-                ? 'Drag to send units. Select first, then drag to set a supply line.'
-                : 'Drag to send units.'));
+            menu.appendChild(el('div', 'tm-hint', t(t.generatesMobile() ? 'menu.hintMobile' : 'menu.hintStatic')));
         } else if (t.owner != null && t.owner !== this.me.id) {
             const p = this.game.players[t.owner];
             const allied = this.me.allies.has(t.owner);
             const pending = p && p.allies.has(this.me.id) && !allied;
             const b = el('button', 'tm-btn' + (allied ? ' danger' : ''),
-                allied ? 'Break alliance' : (pending ? 'Accept alliance' : 'Request alliance'));
+                t(allied ? 'menu.breakAlly' : (pending ? 'menu.acceptAlly' : 'menu.requestAlly')));
             b.addEventListener('click', (ev) => {
                 ev.stopPropagation();
                 this.game.requestAlliance(this.me.id, t.owner);
@@ -510,7 +551,7 @@ export class App {
             });
             menu.appendChild(b);
         } else {
-            menu.appendChild(el('div', 'tm-hint', t.owner == null ? 'Unowned' : ''));
+            menu.appendChild(el('div', 'tm-hint', t.owner == null ? t('menu.unowned') : ''));
         }
 
         this.positionMenu();
@@ -523,12 +564,98 @@ export class App {
 
     unitRow(u, count, cap) {
         const row = el('div', 'tm-unit');
-        row.title = LABEL[UNITS[u].name] || UNITS[u].name;
+        row.title = tName('unit', UNITS[u].name);
         const badge = el('span', 'unit-' + UNITS[u].name.toLowerCase());
         row.appendChild(badge);
         row.appendChild(el('span', 'tm-count', `${count}/${cap}`));
         if (TOWER_GEN_HINT[u]) row.appendChild(el('span', 'tm-gen', TOWER_GEN_HINT[u]));
         return row;
+    }
+
+    // ---------------- language ----------------
+    // Every static label, tooltip and placeholder is rewritten from the dictionary. Anything
+    // that is rebuilt per frame or per selection (leaderboard, tower menu, alerts, dialogs)
+    // is redrawn right after so the switch is instant, with no reload.
+    applyLanguage() {
+        const setText = (id, key) => { const e = D(id); if (e) e.textContent = t(key); };
+        const setTitle = (id, key) => { const e = D(id); if (e) e.title = t(key); };
+        const setPh = (id, key) => { const e = D(id); if (e) e.placeholder = t(key); };
+
+        document.title = t('app.title');
+
+        // Top bar.
+        setText('lbl-score', 'hud.score');
+        setText('lbl-towers', 'hud.towers');
+        setText('lbl-life', 'hud.life');
+
+        setPh('chat-input', 'chat.placeholder');
+
+        setTitle('zoom-out', 'zoom.out');
+        setTitle('zoom-in', 'zoom.in');
+        setTitle('center-btn', 'zoom.center');
+
+        setTitle('pause-btn', this.paused ? 'btn.resume' : 'btn.pause');
+        setTitle('speed-btn', 'btn.speed');
+        setTitle('god-btn', 'btn.god');
+        setTitle('fog-btn', 'btn.fogTitle');
+        setText('god-btn', 'btn.god');
+        setText('fog-btn', this.fogEnabled ? 'btn.fog' : 'btn.fogOff');
+        setText('help-btn', 'btn.help');
+        setText('towers-btn', 'btn.towers');
+        setText('units-btn', 'btn.units');
+        setText('newgame-btn', 'btn.newgame');
+
+        setText('spawn-sub', 'spawn.sub');
+        setPh('name-input', 'spawn.name');
+        setText('play-btn', 'spawn.play');
+        setText('dialog-close', 'common.close');
+
+        this.renderLangPicker();
+        this.buildTowerLabels();
+        // Live widgets.
+        this.updateHud();
+        this.renderMenu();
+        this.lastAlertSig = null;
+        this.renderGameAlerts();
+        this.retranslateAlerts();
+        this.renderAlertList();
+        this.showDeath(false);
+        if (this.dialogKind) this.openDialog(this.dialogKind);
+    }
+
+    // The picker in the top-right corner: a <select> keeps native keyboard/AT behaviour and
+    // costs nothing, and each option carries the language's own name so it is findable in
+    // whatever language the player reads.
+    renderLangPicker() {
+        const sel = D('lang-select');
+        if (!sel) return;
+        const cur = langCode();
+        if (!sel.dataset.built) {
+            sel.innerHTML = '';
+            for (const code of langCodes()) {
+                const o = document.createElement('option');
+                o.value = code;
+                o.textContent = metaOf(code).name;
+                sel.appendChild(o);
+            }
+            sel.dataset.built = '1';
+            sel.addEventListener('change', () => this.setLanguage(sel.value));
+        }
+        sel.value = cur || sel.value;
+        sel.title = t('common.language');
+        sel.setAttribute('aria-label', t('common.language'));
+    }
+
+    setLanguage(code) {
+        if (code === langCode()) return;
+        setLang(code);
+        this.applyLanguage();
+    }
+
+    // Tower/unit names are used all over the UI; resolve them once per language change.
+    buildTowerLabels() {
+        for (const tw of TOWERS) tw.label = tName('tower', tw.name);
+        for (const u of UNITS) u.label = tName('unit', u.name);
     }
 
     // ---------------- icon overlay ----------------
@@ -538,6 +665,10 @@ export class App {
         if (!this.iconLayer) {
             this.iconLayer = D('icons');
             this.iconEls = new Map();
+            // Batch every style write through a single transform-based node move: writing
+            // left/top (and swapping img.src) per tower per frame forces a synchronous
+            // layout on every frame, which is the main source of the stutter.
+            this.iconPool = [];
         }
         const z = this.camera.zoom;
         const { cw, ch } = this.renderer;
@@ -556,6 +687,7 @@ export class App {
             if (!el) {
                 el = document.createElement('img');
                 el.className = 'tico';
+                el.draggable = false;
                 this.iconLayer.appendChild(el);
                 this.iconEls.set(k, el);
             }
@@ -565,11 +697,11 @@ export class App {
                 el.src = this.svgUrl(t.type, `rgb(${c.join(',')})`);
                 el.dataset.key = key;
             }
-            el.style.width = size + 'px';
-            el.style.height = size + 'px';
-            el.style.left = (sx - size / 2) + 'px';
-            el.style.top = (sy - size * 0.95) + 'px';
-            el.style.opacity = t.owner == null ? 0.85 : 1;
+            const w = Math.round(size) + 'px';
+            if (el.style.width !== w) { el.style.width = w; el.style.height = w; }
+            const opacity = t.owner == null ? '0.85' : '1';
+            if (el.style.opacity !== opacity) el.style.opacity = opacity;
+            el.style.transform = `translate3d(${(sx - size / 2).toFixed(1)}px,${(sy - size * 0.95).toFixed(1)}px,0)`;
         }
         for (const [k, el] of this.iconEls) {
             if (!seen.has(k)) { el.remove(); this.iconEls.delete(k); }
@@ -586,27 +718,43 @@ export class App {
     // ---------------- HUD ----------------
     updateHud() {
         const me = this.me;
-        D('score').textContent = fmt(me.score);
-        D('towers-n').textContent = fmt(me.towers.size);
-        const rank = document.querySelectorAll('#leaderboard .lb-row');
+        const score = fmt(me.score);
+        const towers = fmt(me.towers.size);
+        if (this._hudScore !== score) { this._hudScore = score; D('score').textContent = score; }
+        if (this._hudTowers !== towers) { this._hudTowers = towers; D('towers-n').textContent = towers; }
+
+        // The leaderboard is rebuilt only when its *content* changes. Rewriting its innerHTML
+        // every frame (60x/s) forced a full style recalc + layout each time — the single most
+        // expensive thing the UI did, and the main source of the visible hitch.
         const rows = this.game.players
             .filter((p) => p.alive || p.id === me.id)
             .map((p) => ({ p, score: p.id === me.id ? me.score : p.score, n: p.towers.size }))
             .sort((a, b) => b.score - a.score || b.n - a.n)
             .slice(0, 10);
-        const lb = D('leaderboard');
-        let html = '<div class="lb-head">Leaderboard</div>';
-        rows.forEach((r, i) => {
-            const mine = r.p.id === me.id;
-            const col = this.colorCss(r.p.id);
-            html += `<div class="lb-row${mine ? ' me' : ''}"><span class="lb-n">${i + 1}.</span>` +
-                `<span class="lb-dot" style="background:${col}"></span>` +
-                `<span class="lb-name">${escapeHtml(r.p.name)}</span>` +
-                `<span class="lb-score">${r.score}</span></div>`;
-        });
-        html += `<div class="lb-foot">${fmt(this.game.towers.size)} towers · ${this.game.players.filter((p) => p.alive).length} players</div>`;
-        lb.innerHTML = html;
-        D('alive-dot').style.background = me.alive ? '#74b9ff' : '#c0392b';
+        const aliveCount = this.game.players.filter((p) => p.alive).length;
+        const sig = rows.map((r) => `${r.p.id}:${r.p.name}:${r.score}`).join('|') +
+            `#${this.game.towers.size}#${aliveCount}#${t('hud.leaderboard')}#${t('hud.footer')}`;
+        if (sig !== this._lbSig) {
+            this._lbSig = sig;
+            const lb = D('leaderboard');
+            let html = `<div class="lb-head">${t('hud.leaderboard')}</div>`;
+            rows.forEach((r, i) => {
+                const mine = r.p.id === me.id;
+                const col = this.colorCss(r.p.id);
+                html += `<div class="lb-row${mine ? ' me' : ''}"><span class="lb-n">${i + 1}.</span>` +
+                    `<span class="lb-dot" style="background:${col}"></span>` +
+                    `<span class="lb-name">${escapeHtml(r.p.name)}</span>` +
+                    `<span class="lb-score">${r.score}</span></div>`;
+            });
+            html += `<div class="lb-foot">${t('hud.footer', {
+                towers: fmt(this.game.towers.size),
+                players: aliveCount,
+            })}</div>`;
+            lb.innerHTML = html;
+        }
+
+        const alive = me.alive ? '#74b9ff' : '#c0392b';
+        if (this._hudAlive !== alive) { this._hudAlive = alive; D('alive-dot').style.background = alive; }
     }
 
     colorCss(owner) {
@@ -631,7 +779,7 @@ export class App {
                 : this.visibility.near(pos[0], pos[1], this.game);
         if (pos && visible) this.effects.onEvent(e, pos);
         if (e.type === 'ruler' && e.player === this.me.id) {
-            this.alerts.unshift({ text: 'Your King was killed!', sub: '', kind: 'bad', until: performance.now() + 8000 });
+            this.alerts.unshift({ text: t('alert.kingDead'), sub: '', kind: 'bad', until: performance.now() + 8000 });
         }
         if (e.type === 'died' && e.player === this.me.id) {
             this.showDeath(true);
@@ -640,11 +788,22 @@ export class App {
 
     renderAlerts() { /* alerts are pushed in pushAlert */ }
 
+    // Toasts are queued as translation *keys* (or literal text for engine errors) so that a
+    // language switch can re-render the ones still on screen in the new language.
     pushAlert(text, sub, kind = 'info', ms = 7000) {
         this.alerts = this.alerts || [];
-        if (this.alerts.some((a) => a.text === text)) return;
-        this.alerts.unshift({ text, sub, kind, until: performance.now() + ms });
+        const key = isTranslatableKey(text) ? text : null;
+        const shown = key ? t(key) : text;
+        if (this.alerts.some((a) => a.text === shown)) return;
+        this.alerts.unshift({ key, text: shown, sub, kind, until: performance.now() + ms });
         this.renderAlertList();
+    }
+
+    // Re-resolve every queued toast; called when the language changes.
+    retranslateAlerts() {
+        for (const a of (this.alerts || [])) {
+            if (a.key) a.text = t(a.key);
+        }
     }
 
     // The Kiomet-style alert column (King safety, tutorial, full/overflow, zombies).
@@ -663,13 +822,13 @@ export class App {
             txt.appendChild(el('div', 'galert-sub', a.hint));
             row.appendChild(txt);
             if (a.tower) {
-                row.title = 'Click to jump';
+                row.title = t('toast.menuHint');
                 row.addEventListener('click', () => {
                     const t = this.game.getTower(a.tower);
                     if (t) { this.centreOn(t); this.selected = { x: t.x, y: t.y }; this.renderMenu(); }
                 });
             }
-            const x = el('span', 'galert-x', '✘');
+            const x = el('span', 'galert-x', CLOSE_GLYPH);
             x.addEventListener('click', (ev) => {
                 ev.stopPropagation();
                 this.alertBoard.dismiss(a.kind);
@@ -693,7 +852,7 @@ export class App {
             txt.appendChild(el('div', 'alert-main', escapeHtml(a.text)));
             if (a.sub) txt.appendChild(el('div', 'alert-sub', escapeHtml(a.sub)));
             row.appendChild(txt);
-            const x = el('span', 'alert-x', '✘');
+            const x = el('span', 'alert-x', CLOSE_GLYPH);
             x.addEventListener('click', () => { a.until = 0; this.renderAlertList(); });
             row.appendChild(x);
             box.appendChild(row);
@@ -704,10 +863,12 @@ export class App {
     deathText() {
         const p = this.game.players[this.me.id];
         const r = p && p.deathReason;
-        if (!r) return 'Your King was killed!';
-        const who = r.killer == null ? 'zombies' : `${this.game.players[r.killer] ? this.game.players[r.killer].name : 'someone'}'s`;
-        const what = r.unit == null ? '' : ` ${UNITS[r.unit].name}`;
-        return `King killed by ${who}${what}!`;
+        if (!r) return t('death.default');
+        if (r.killer == null) return t('death.byZombies');
+        const killer = this.game.players[r.killer];
+        const who = killer ? killer.name : t('death.someone');
+        if (r.unit == null) return t('death.byPlayerNoUnit', { player: who });
+        return t('death.byPlayer', { player: who, unit: tName('unit', UNITS[r.unit].name) });
     }
 
     showDeath(anim) {
@@ -740,19 +901,16 @@ export class App {
         D('pause-btn').addEventListener('click', () => this.togglePause());
         D('speed-btn').addEventListener('click', () => {
             this.speed = this.speed === 1 ? 2 : this.speed === 2 ? 4 : 1;
-            D('speed-btn').textContent = this.speed + '×';
+            D('speed-btn').textContent = this.speed + '脳';
             D('speed-btn').classList.toggle('active', this.speed !== 1);
         });
         D('god-btn').addEventListener('click', () => {
             this.godMode = !this.godMode;
             localStorage.setItem('kiomet-god', this.godMode ? '1' : '0');
             D('god-btn').classList.toggle('active', this.godMode);
-        D('fog-btn').textContent = this.fogEnabled ? '迷雾:开' : '迷雾:关';
-        D('fog-btn').addEventListener('click', () => this.toggleFog());
-            this.toast(this.godMode ? 'God mode on — your King cannot die' : 'God mode off');
+            this.toast(this.godMode ? 'toast.godOn' : 'toast.godOff');
         });
         D('god-btn').classList.toggle('active', this.godMode);
-        D('fog-btn').textContent = this.fogEnabled ? '迷雾:开' : '迷雾:关';
         D('fog-btn').addEventListener('click', () => this.toggleFog());
         D('help-btn').addEventListener('click', () => this.openDialog('help'));
         D('towers-btn').addEventListener('click', () => this.openDialog('towers'));
@@ -764,24 +922,27 @@ export class App {
         D('center-btn').addEventListener('click', () => this.panToKey(this.me.rulerKey));
         D('name-input').value = this.name;
         setInterval(() => this.renderAlertList(), 500);
-        this.toast('Click a tower for its menu · drag from your towers to send units · H finds your King');
+        this.toast('toast.intro');
     }
 
     toggleFog() {
         this.fogEnabled = !this.fogEnabled;
         localStorage.setItem('kiomet-fog', this.fogEnabled ? '1' : '0');
         const btn = D('fog-btn');
-        if (btn) btn.textContent = this.fogEnabled ? '迷雾:开' : '迷雾:关';
+        if (btn) btn.textContent = t(this.fogEnabled ? 'btn.fog' : 'btn.fogOff');
         this.visibility.invalidate();
         this.updateVisibility();
     }
 
     togglePause() {
         this.paused = !this.paused;
-        D('pause-btn').textContent = this.paused ? '▶' : '❚❚';
-        D('pause-btn').classList.toggle('active', this.paused);
+        const btn = D('pause-btn');
+        btn.textContent = this.paused ? '▶' : '❚❚';
+        btn.title = t(this.paused ? 'btn.resume' : 'btn.pause');
+        btn.classList.toggle('active', this.paused);
     }
 
+    // `text` may be a translation key or an already-formatted string (engine errors).
     toast(text) {
         this.pushAlert(text, '', 'info', 6000);
     }
@@ -799,19 +960,25 @@ export class App {
         const dlg = D('dialog');
         const body = D('dialog-body');
         dlg.classList.remove('hidden');
+        // Remembered so a language switch can redraw the open panel in the new language.
+        this.dialogKind = which;
+        const title = D('dialog-title');
         if (which === 'help') {
-            D('dialog-title').textContent = 'Help';
-            body.innerHTML = HELP_HTML;
+            title.textContent = t('help.title');
+            body.innerHTML = t('help.body');
         } else if (which === 'towers') {
-            D('dialog-title').textContent = 'Towers';
+            title.textContent = t('towers.title');
             body.innerHTML = towersHtml();
         } else {
-            D('dialog-title').textContent = 'Units';
+            title.textContent = t('units.title');
             body.innerHTML = unitsHtml();
         }
     }
 
-    closeDialog() { D('dialog').classList.add('hidden'); }
+    closeDialog() {
+        this.dialogKind = null;
+        D('dialog').classList.add('hidden');
+    }
 }
 
 function c2(t, u) { return t.units.get(u) > 0; }
@@ -821,23 +988,33 @@ const TOWER_GEN_HINT = {};
 // Tower reference, worded like the real /towers page: "Upgrades from X (in 20s), requires 2 Factory",
 // "Can contain 12 Soldier, 2 Tank, 10 Shield", "Generates Soldier (every 6s), worth 1 point".
 function towersHtml() {
-    const icon = (n) => `<img class="ref-ico" src="${svgRef(n)}" alt="${n}">`;
-    const unitRef = (n) => `<span class="ref-unit"><b>${n}</b></span>`;
-    let out = '<p class="ref-lead">The 27 towers. Solid lines are upgrades, dashed lines are prerequisites.</p>';
+    const icon = (n) => `<img class="ref-ico" src="${svgRef(n)}" alt="${escapeHtml(tName('tower', n))}">`;
+    const unitRef = (n) => `<span class="ref-unit"><b>${escapeHtml(tName('unit', n))}</b></span>`;
+    let out = `<p class="ref-lead">${t('towers.lead')}</p>`;
     out += '<div class="ref-grid">';
-    for (const t of TOWERS) {
-        const up = t.down ? `<p>Upgrades from ${icon(t.down)} <b>${t.down}</b> (in ${t.delay}s)` +
-            (t.prereqs.length ? ', requires ' + t.prereqs.map(([p2, n]) => `${n}${icon(p2)}`).join(', ') : '') + '.</p>'
-            : '<p class="ref-dim">Found on the map.</p>';
-        const cap = Object.entries(t.cap).map(([u, c]) => `${c} ${unitRef(u)}`).join(', ');
-        const gen = Object.entries(t.gen).map(([u, sec]) => `${unitRef(u)} (every ${sec}s)`).join(', ');
+    for (const tw of TOWERS) {
+        const reqs = tw.prereqs.map(([p2, n]) => `${n}${icon(p2)}`).join(', ');
+        const up = tw.down
+            ? `<p>${t(reqs ? 'towers.upgradesFromReq' : 'towers.upgradesFrom', {
+                icon: icon(tw.down),
+                tower: tName('tower', tw.down),
+                seconds: tw.delay,
+                reqs,
+            })}.</p>`
+            : `<p class="ref-dim">${t('towers.foundOnMap')}</p>`;
+        const cap = Object.entries(tw.cap).map(([u, c]) => `${c} ${unitRef(u)}`).join(', ');
+        const gen = Object.entries(tw.gen)
+            .map(([u, sec]) => t('towers.generatesEvery', { unit: unitRef(u), seconds: sec }))
+            .join(', ');
+        // Chinese-style languages end the clause with a full stop; the template owns the
+        // punctuation so translations can place it correctly.
         out += `<div class="ref-card">
-            <h3>${icon(t.name)} ${LABEL[t.name] || t.name}</h3>
+            <h3>${icon(tw.name)} ${escapeHtml(tName('tower', tw.name))}</h3>
             ${up}
-            <p>Can contain ${cap}.</p>
-            <p>Generates ${gen || 'nothing'}, worth ${t.score} point${t.score === 1 ? '' : 's'}.</p>
-            ${t.sensor > 12 ? `<p>Has a ${Math.round(100 * (t.sensor - 12) / 12)}% higher visual range.</p>` : ''}
-            ${t.name === 'Projector' ? '<p>Can send Shields along roads.</p>' : ''}
+            <p>${t('towers.canContain', { units: cap })}</p>
+            <p>${t('towers.generates', { units: gen || t('towers.generatesNothing') })}${t('towers.worth', { points: tw.score })}</p>
+            ${tw.sensor > 12 ? `<p>${t('towers.sensor', { percent: Math.round(100 * (tw.sensor - 12) / 12) })}</p>` : ''}
+            ${tw.name === 'Projector' ? `<p>${t('towers.projector')}</p>` : ''}
         </div>`;
     }
     return out + '</div>';
@@ -846,29 +1023,29 @@ function towersHtml() {
 // Unit reference, worded like the real /units page (damage vs surface/air, speed, range,
 // chopper weight, EMP duration, overflow allowance, which towers make it).
 function unitsHtml() {
-    const icon = (n) => `<img class="ref-ico" src="${svgRef(n)}" alt="${n}">`;
-    let out = '<p class="ref-lead">The 10 units. They generally fight in the order listed — ' +
-        'shield always absorbs damage first.</p><div class="ref-grid">';
-    const SPEED = { slow: 'Travels at a slow speed.', normal: 'Travels at a moderate speed.', fast: 'Travels at a fast speed.', shield: 'Is immobile.' };
-    const RANGE = { short: 'Has a short range.', medium: 'Has a medium range.', long: 'Has a long range.' };
+    const icon = (n) => `<img class="ref-ico" src="${svgRef(n)}" alt="${escapeHtml(tName('tower', n))}">`;
+    let out = `<p class="ref-lead">${t('units.lead')}</p><div class="ref-grid">`;
     for (let u = 0; u < UNITS.length; u++) {
         const d = UNITS[u];
-        const makers = TOWERS.filter((t) => t.gen[d.name]).map((t) => icon(t.name)).join(' ');
+        const makers = TOWERS.filter((tw) => tw.gen[d.name]).map((tw) => icon(tw.name)).join(' ');
         const surface = Math.max(damageOf(u, 0, 0), damageOf(u, 1, 0));
         const air = Math.max(damageOf(u, 0, 1), damageOf(u, 1, 1));
-        let dmg = surface === air ? `Does ${surface >= 31 ? 'infinite' : surface} damage.`
-            : `Does ${surface >= 31 ? 'infinite' : surface} damage against surface, ${air} damage against air.`;
+        const fmtDmg = (n) => (n >= 31 ? t('units.infinite') : n);
+        const dmg = surface === air
+            ? t('units.damage', { surface: fmtDmg(surface) })
+            : t('units.damageBoth', { surface: fmtDmg(surface), air: fmtDmg(air) });
+        const speedText = d.name === 'Shield' ? t('units.shieldSpecial') : t(`units.speed.${d.speed}`);
         out += `<div class="ref-card">
-            <h3>${icon(d.name)} ${LABEL[d.name] || d.name}</h3>
-            ${makers ? `<p>Produced by ${makers}.</p>` : ''}
+            <h3>${icon(d.name)} ${escapeHtml(tName('unit', d.name))}</h3>
+            ${makers ? `<p>${t('units.producedBy', { makers })}</p>` : ''}
             <p>${dmg}</p>
-            <p>${d.name === 'Shield' ? 'Immobile unless sent from a Projector, in which case it travels fast.' : SPEED[d.speed] || ''}</p>
-            ${d.range ? `<p>${RANGE[d.range]}</p>` : ''}
-            ${d.weight ? `<p>Has weight of ${d.weight} for Choppers.</p>` : ''}
-            ${d.name === 'Chopper' ? '<p>Can carry other units (weight of 4).</p>' : ''}
-            ${d.name === 'Emp' ? '<p>Disables a tower for 60s.</p>' : ''}
-            ${d.maxOverflow ? `<p>Up to ${d.maxOverflow} can temporarily overflow a tower.</p>` : ''}
-            ${d.name === 'King' ? `<p>Boosts shield capacity by ${RULER_SHIELD_BOOST}. If it dies, you lose the game.</p>` : ''}
+            <p>${speedText}</p>
+            ${d.range ? `<p>${t(`units.range.${d.range}`)}</p>` : ''}
+            ${d.weight ? `<p>${t('units.weight', { weight: d.weight })}</p>` : ''}
+            ${d.name === 'Chopper' ? `<p>${t('units.chopper')}</p>` : ''}
+            ${d.name === 'Emp' ? `<p>${t('units.emp')}</p>` : ''}
+            ${d.maxOverflow ? `<p>${t('units.overflow', { count: d.maxOverflow })}</p>` : ''}
+            ${d.name === 'King' ? `<p>${t('units.king', { boost: RULER_SHIELD_BOOST })}</p>` : ''}
         </div>`;
     }
     return out + '</div>';
@@ -894,28 +1071,12 @@ function svgRef(name) {
     return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
 }
 
-// Help, condensed from the real client help (client/src/ui/translations/help/en.md).
-const HELP_HTML = `
-<p>Kiomet is a real-time strategy game: expand your territory by sending units to capture towers.</p>
-<h3>How to play</h3>
-<p>Drag units to capture towers. To upgrade a tower, click it and then click an available upgrade.
-Upgrades list their requirements next to them.</p>
-<h3>How to win</h3>
-<p>Earn points by capturing towers and holding them as long as possible. Protect your King —
-losing it costs you the game. A Bunker or Headquarters can survive a few Nukes.</p>
-<h3>Supply lines</h3>
-<p>Towers that make units can send them automatically. Click a tower to open its menu, then drag
-from it as normal; if the path shows moving arrows, you succeeded. Hold <b>R</b> to show all your
-supply lines. Delete one by drawing it again or with <b>Shift+R</b>.</p>
-<h3>Alliances</h3>
-<p>Select a tower of another player and click the handshake button to request or accept an
-alliance. Until it is broken, neither side can attack the other.</p>
-<h3>Keys</h3>
-<p><b>H</b> find your King · <b>Q</b>/<b>E</b> zoom · <b>WASD</b> or arrows to pan ·
-<b>T</b> mark towers of the selected kind · <b>R</b> supply lines · <b>B</b> fog of war ·
-<b>Space</b> pause · <b>Esc</b> close menus.</p>
-`;
-
 function escapeHtml(s) {
     return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+// A string is a translation key when it looks like `section.name` and the dictionary knows
+// it, which keeps engine messages (plain words like "path too long") renderable as-is.
+function isTranslatableKey(s) {
+    return typeof s === 'string' && /^[a-z]+\.[A-Za-z0-9.]+$/.test(s) && t(s) !== s;
 }

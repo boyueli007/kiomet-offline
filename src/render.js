@@ -28,6 +28,10 @@ export const COLORS = {
 // re-encoded to 64px transparent WebP.
 const BG = '#2d3436';
 
+// Upper bound on the canvas backing store (~8.3 Mpx). Beyond this the per-frame fill of the
+// whole surface costs more than the extra sharpness is worth on a 4K/HiDPI display.
+const MAX_BACKING_PX = 3840 * 2160;
+
 export class Camera {
     constructor() { this.x = 0; this.y = 0; this.zoom = 18; }
     toScreen(wx, wy, cw, ch) { return [(wx - this.x) * this.zoom + cw / 2, (wy - this.y) * this.zoom + ch / 2]; }
@@ -42,20 +46,54 @@ export class Camera {
 export class Renderer {
     constructor(canvas, icons) {
         this.canvas = canvas;
-        this.ctx = canvas.getContext('2d');
+        // `alpha: false` lets the compositor skip blending the whole canvas every frame and
+        // is safe here because the world always paints an opaque background first.
+        this.ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
         this.camera = new Camera();
         // SvgColor: each glyph stroked in its owner's colour, cached per colour.
         this.glyphCache = new Map();
         this.unitCache = new Map();
+        // Baked glow sprites for territory halos, keyed by colour and radius bucket.
+        this.haloCache = new Map();
         this.dpr = Math.min(2, window.devicePixelRatio || 1);
+        this.effectiveDpr = this.dpr;
+        this.qualityCap = this.dpr;      // adaptive scaler never exceeds the display's dpr
         this.resize();
+    }
+
+    // Dynamic resolution: reallocate the backing store at a lower scale without touching the
+    // CSS size, so the game keeps its layout and only loses detail. Called by the frame loop
+    // when frames run long, and again when there is headroom.
+    setQualityScale(scale) {
+        const next = Math.max(0.5, Math.min(this.qualityCap, scale));
+        if (Math.abs(next - this.effectiveDpr) < 0.01) return;
+        this.effectiveDpr = next;
+        this.canvas.width = Math.max(1, Math.round(this.cw * next));
+        this.canvas.height = Math.max(1, Math.round(this.ch * next));
     }
 
     resize() {
         const r = this.canvas.getBoundingClientRect();
         this.cw = r.width; this.ch = r.height;
-        this.canvas.width = Math.round(r.width * this.dpr);
-        this.canvas.height = Math.round(r.height * this.dpr);
+        this.origX = r.left; this.origY = r.top;
+        // Cap the backing-store size: a 4K window at dpr 2 would otherwise redraw 33 Mpx
+        // every frame, which is what makes the canvas feel like it is dragging.
+        let ratio = this.dpr;
+        const maxPx = MAX_BACKING_PX;
+        const want = r.width * r.height * ratio * ratio;
+        if (want > maxPx) ratio = Math.sqrt(maxPx / Math.max(1, r.width * r.height));
+        this.qualityCap = ratio;
+        // Keep the adaptive downscale across resizes rather than snapping back to full size.
+        if (this.effectiveDpr == null || this.effectiveDpr > ratio) this.effectiveDpr = ratio;
+        this.canvas.width = Math.max(1, Math.round(r.width * this.effectiveDpr));
+        this.canvas.height = Math.max(1, Math.round(r.height * this.effectiveDpr));
+    }
+
+    // Pointer events give clientX/Y in CSS pixels of the *viewport*; the camera works in the
+    // canvas' own box. Adding the canvas origin only matters when the canvas is not at (0,0),
+    // but it also keeps taps aligned if the page ever gets a margin or the canvas is inset.
+    eventToLocal(e) {
+        return [e.clientX - (this.origX || 0), e.clientY - (this.origY || 0)];
     }
 
     // Which towers should be drawn: everything within the view plus any owned tower.
@@ -63,7 +101,7 @@ export class Renderer {
         this.fog = view && view.fog ? view.fog : null;
         const ctx = this.ctx;
         const { cw, ch } = this;
-        ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+        ctx.setTransform(this.effectiveDpr, 0, 0, this.effectiveDpr, 0, 0);
         ctx.fillStyle = BG;
         ctx.fillRect(0, 0, cw, ch);
 
@@ -96,22 +134,44 @@ export class Renderer {
         return COLORS.enemy;
     }
 
+    // Territory halos. `createRadialGradient` is one of the most expensive Canvas 2D calls, so
+    // each (colour, radius-bucket) pair is baked once into a small offscreen canvas and then
+    // blitted — the same trick sprite frameworks use for glow rings.
+    halo(colour, r) {
+        const bucket = Math.max(8, Math.round(r / 4) * 4);   // 4px buckets keep the cache tiny
+        const key = `${colour}|${bucket}`;
+        let c = this.haloCache.get(key);
+        if (c) return c;
+        c = document.createElement('canvas');
+        const d = bucket * 2;
+        c.width = d; c.height = d;
+        const g2 = c.getContext('2d');
+        const grad = g2.createRadialGradient(bucket, bucket, 0, bucket, bucket, bucket);
+        grad.addColorStop(0, `rgba(${colour},0.55)`);
+        grad.addColorStop(1, `rgba(${colour},0)`);
+        g2.fillStyle = grad;
+        g2.fillRect(0, 0, d, d);
+        this.haloCache.set(key, c);
+        return c;
+    }
+
     drawTerritory(ctx, game, visible) {
         const fog = this.fog;
         const z = this.camera.zoom;
         const r = Math.max(12, z * 2.2);
+        const bucket = Math.max(8, Math.round(r / 4) * 4);
+        const size = bucket * 2;
         ctx.save();
         ctx.globalAlpha = 0.10;
         for (const t of visible) {
             if (t.owner == null) continue;
             if (fog && !fog(t)) continue;
             const c = this.colorFor(game, t.owner, game.view);
-            const [sx, sy] = this.camera.toScreen(integerPosition(t.x, t.y)[0], integerPosition(t.x, t.y)[1], this.cw, this.ch);
-            const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
-            g.addColorStop(0, `rgba(${c[0]},${c[1]},${c[2]},0.55)`);
-            g.addColorStop(1, `rgba(${c[0]},${c[1]},${c[2]},0)`);
-            ctx.fillStyle = g;
-            ctx.fillRect(sx - r, sy - r, r * 2, r * 2);
+            const p = integerPosition(t.x, t.y);
+            const [sx, sy] = this.camera.toScreen(p[0], p[1], this.cw, this.ch);
+            // Skip halos entirely outside the viewport instead of drawing off-screen squares.
+            if (sx + bucket < 0 || sy + bucket < 0 || sx - bucket > this.cw || sy - bucket > this.ch) continue;
+            ctx.drawImage(this.halo(this.shade(c, 1), bucket), sx - bucket, sy - bucket, size, size);
         }
         ctx.restore();
     }

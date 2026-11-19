@@ -12,15 +12,16 @@
 :root{
   --bg:#2d3436; --panel:#00000033; --panel-solid:#20282a; --text:#e8ecf1;
   --blue:#74b9ff; --red:#c0392b; --purple:#8644fc; --gold:#ffd166;
+  --ui-font:system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft Yahei",sans-serif;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--text);
-  font:14px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft Yahei",sans-serif;
+  font:14px/1.35 var(--ui-font);
   user-select:none;-webkit-user-select:none}
 #app{position:absolute;inset:0;z-index:0}
-#game-alerts,#topbar,#leaderboard,#alerts,#chat,#controls,#zoomctl,#tower-menu,#spawn,#dialog{position:absolute;z-index:2}
-#icons{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:1}
-.tico{position:absolute;will-change:left,top;filter:drop-shadow(0 1px 1px #0008)}
+#game-alerts,#topbar,#leaderboard,#lang-picker,#alerts,#chat,#controls,#zoomctl,#tower-menu,#spawn,#dialog{position:absolute;z-index:2}
+#icons{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:1;contain:strict}
+.tico{position:absolute;left:0;top:0;will-change:transform;filter:drop-shadow(0 1px 1px #0008)}
 #canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;z-index:0}
 .hidden{display:none!important}
 
@@ -41,6 +42,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 .galert-sub{opacity:.7;font-size:.74rem;line-height:1.3}
 .galert-x{margin-left:auto;opacity:.5;padding-left:.4rem}
 .galert-x:hover{opacity:1}
+/* Toast column: bottom-left, above the chat box (the game alerts own the top-left corner). */
 #alerts{top:auto;bottom:11.5rem;max-width:22rem}
 #leaderboard{position:absolute;right:.6rem;top:.6rem;min-width:11rem;max-width:24vw;
   background:var(--panel);border-radius:.4rem;padding:.35rem .5rem;font-size:.8rem;backdrop-filter:blur(2px)}
@@ -160,6 +162,41 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 .tbl th,.tbl td{text-align:left;padding:.25rem .45rem;border-bottom:1px solid #ffffff14;vertical-align:top}
 .tbl th{opacity:.7;font-weight:600;position:sticky;top:0;background:var(--panel-solid)}
 
+/* language picker (top-right, above the leaderboard) */
+#lang-picker{position:absolute;right:.6rem;top:.6rem;display:flex;align-items:center;gap:.25rem;
+  z-index:3;background:var(--panel);border-radius:.4rem;padding:.15rem .3rem;backdrop-filter:blur(2px)}
+.lang-label{font-size:.85rem;opacity:.8;line-height:1}
+#lang-select{background:#00000055;border:1px solid #ffffff26;color:var(--text);border-radius:.3rem;
+  padding:.15rem .25rem;font:inherit;font-size:.78rem;cursor:pointer;outline:none;max-width:8.5rem}
+#lang-select:hover{border-color:var(--blue)}
+#lang-select:focus-visible{border-color:var(--blue);box-shadow:0 0 0 2px #74b9ff44}
+#lang-select option{background:#20282a;color:var(--text)}
+/* the leaderboard sits below the picker so the two never overlap */
+#leaderboard{top:2.75rem}
+
+/* right-to-left (Arabic). Every horizontal offset above is physical, so mirror the
+   containers that anchor to an edge; flex/inline text direction is handled by `dir`. */
+html[dir="rtl"] #lang-picker{right:auto;left:.6rem}
+html[dir="rtl"] #leaderboard{right:auto;left:.6rem;text-align:right}
+/* Alerts swap corners: the game alerts take the right edge, toasts the left. Both rules have
+   the same specificity as the LTR ones, so they must sit after them in the sheet. */
+html[dir="rtl"] #game-alerts{left:auto;right:.6rem}
+html[dir="rtl"] #alerts{left:.6rem;right:auto}
+html[dir="rtl"] #chat{left:auto;right:.6rem}
+html[dir="rtl"] #controls{right:auto;left:.6rem;justify-content:flex-start}
+html[dir="rtl"] #zoomctl{right:auto;left:.6rem}
+html[dir="rtl"] .galert{border-left:none;border-right:3px solid var(--blue)}
+html[dir="rtl"] .galert.rulerAttack,html[dir="rtl"] .galert.rulerUnsafe{border-right-color:var(--red)}
+html[dir="rtl"] .galert.overflow,html[dir="rtl"] .galert.zombies{border-right-color:var(--gold)}
+/* The dismiss button is the leading inline item in RTL; push it to the far edge on the left. */
+html[dir="rtl"] .galert-x{margin-left:auto;margin-right:0;padding-left:0;padding-right:.4rem}
+html[dir="rtl"] .alert-x{margin-left:auto;margin-right:0;padding-left:0;padding-right:.3rem}
+html[dir="rtl"] .tm-owner{margin-left:0;margin-right:auto}
+html[dir="rtl"] .tm-gen{margin-left:0;margin-right:auto}
+html[dir="rtl"] #dialog-close{float:left}
+html[dir="rtl"] .tbl th,html[dir="rtl"] .tbl td{text-align:right}
+html[dir="rtl"] #topbar{direction:rtl}
+
 /* small screens */
 @media (max-width:720px){
   #game-alerts{max-width:70vw;font-size:.74rem}
@@ -168,6 +205,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   #chat-log{max-height:5rem}
   #tower-menu{max-width:13rem;font-size:.76rem}
   #spawn h1{font-size:2rem}
+  #lang-select{font-size:.72rem;max-width:6.5rem}
 }
 </style>
 </head>
@@ -177,14 +215,20 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   <div id="icons"></div>
 
   <div id="topbar">
-    <div class="stat">得分 <b id="score">0</b></div>
-    <div class="stat">塔 <b id="towers-n">0</b></div>
-    <div class="stat">生命 <b id="alive-dot" class="dot"></b></div>
+    <div class="stat"><span id="lbl-score">得分</span> <b id="score">0</b></div>
+    <div class="stat"><span id="lbl-towers">塔</span> <b id="towers-n">0</b></div>
+    <div class="stat"><span id="lbl-life">生命</span> <b id="alive-dot" class="dot"></b></div>
   </div>
 
   <div id="game-alerts"></div>
   <div id="alerts"></div>
   <div id="leaderboard"></div>
+
+  <!-- Language picker: top-right, above the leaderboard. Native <select> for keyboard and AT. -->
+  <div id="lang-picker">
+    <label class="lang-label" for="lang-select">🌐</label>
+    <select id="lang-select" aria-label="Language"></select>
+  </div>
 
   <div id="chat">
     <div id="chat-log"></div>
@@ -214,7 +258,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 
   <div id="spawn" class="hidden">
     <h1>Kiomet<span>.com</span></h1>
-    <p class="sub">实时领地塔防 · 单机复刻</p>
+    <p class="sub" id="spawn-sub">实时领地塔防 · 单机复刻</p>
     <input id="name-input" maxlength="12" placeholder="昵称" autocomplete="off">
     <button id="play-btn">开始</button>
     <div id="death-reason" class="hidden"></div>
@@ -473,6 +517,7 @@ function randomSpawnableType(hash) {
 // common/src/tower/id.rs and common/src/tower/connectivity.rs.
 
 
+
 const WORLD_SIZE = 512;
 const CENTER = { x: 256, y: 256 };
 const MAX_ROAD_SQ = (MAX_ROAD_LENGTH + 1) ** 2 - 1;
@@ -610,6 +655,7 @@ const isSpawnablePosition = (id) => {
 // only pays for cells that actually hold a tower.
 
 
+
 const indexKey = (x, y) => y * WORLD_SIZE + x;
 
 class TowerIndex {
@@ -652,6 +698,7 @@ class TowerIndex {
 //
 // Unit containers, combat and forces. Ported from Kiomet common/src/units.rs,
 // common/src/combatants.rs and common/src/force.rs.
+
 
 
 
@@ -984,6 +1031,7 @@ const UNIT_SVG = {"Shield": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\
 
 
 
+
 const RAD = 5;                  // world units per cell
 const REF_RADIUS = 15;          // widest sensor radius, in cells (satellite = 30 world units)
 
@@ -1072,6 +1120,7 @@ class Visibility {
 // The world: tower tick loop, forces, upgrades, spawning, scoring.
 // Ported from Kiomet common/src/chunk.rs, common/src/chunk/event.rs,
 // common/src/chunk/maintenance.rs, server/src/world.rs, server/src/service.rs.
+
 
 
 
@@ -1908,6 +1957,7 @@ function samePath(a, b) {
 
 
 
+
 function botUpdate(game, player) {
     if (!player.alive) return;
     const bot = player.botState;
@@ -2037,6 +2087,8 @@ function evacuateKing(game, player, king) {
 
 
 
+
+
 const COLORS = {
     blue: [0x74, 0xb9, 0xff],
     gray: [0x66, 0x66, 0x66],
@@ -2054,6 +2106,10 @@ const COLORS = {
 // re-encoded to 64px transparent WebP.
 const BG = '#2d3436';
 
+// Upper bound on the canvas backing store (~8.3 Mpx). Beyond this the per-frame fill of the
+// whole surface costs more than the extra sharpness is worth on a 4K/HiDPI display.
+const MAX_BACKING_PX = 3840 * 2160;
+
 class Camera {
     constructor() { this.x = 0; this.y = 0; this.zoom = 18; }
     toScreen(wx, wy, cw, ch) { return [(wx - this.x) * this.zoom + cw / 2, (wy - this.y) * this.zoom + ch / 2]; }
@@ -2068,20 +2124,54 @@ class Camera {
 class Renderer {
     constructor(canvas, icons) {
         this.canvas = canvas;
-        this.ctx = canvas.getContext('2d');
+        // `alpha: false` lets the compositor skip blending the whole canvas every frame and
+        // is safe here because the world always paints an opaque background first.
+        this.ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
         this.camera = new Camera();
         // SvgColor: each glyph stroked in its owner's colour, cached per colour.
         this.glyphCache = new Map();
         this.unitCache = new Map();
+        // Baked glow sprites for territory halos, keyed by colour and radius bucket.
+        this.haloCache = new Map();
         this.dpr = Math.min(2, window.devicePixelRatio || 1);
+        this.effectiveDpr = this.dpr;
+        this.qualityCap = this.dpr;      // adaptive scaler never exceeds the display's dpr
         this.resize();
+    }
+
+    // Dynamic resolution: reallocate the backing store at a lower scale without touching the
+    // CSS size, so the game keeps its layout and only loses detail. Called by the frame loop
+    // when frames run long, and again when there is headroom.
+    setQualityScale(scale) {
+        const next = Math.max(0.5, Math.min(this.qualityCap, scale));
+        if (Math.abs(next - this.effectiveDpr) < 0.01) return;
+        this.effectiveDpr = next;
+        this.canvas.width = Math.max(1, Math.round(this.cw * next));
+        this.canvas.height = Math.max(1, Math.round(this.ch * next));
     }
 
     resize() {
         const r = this.canvas.getBoundingClientRect();
         this.cw = r.width; this.ch = r.height;
-        this.canvas.width = Math.round(r.width * this.dpr);
-        this.canvas.height = Math.round(r.height * this.dpr);
+        this.origX = r.left; this.origY = r.top;
+        // Cap the backing-store size: a 4K window at dpr 2 would otherwise redraw 33 Mpx
+        // every frame, which is what makes the canvas feel like it is dragging.
+        let ratio = this.dpr;
+        const maxPx = MAX_BACKING_PX;
+        const want = r.width * r.height * ratio * ratio;
+        if (want > maxPx) ratio = Math.sqrt(maxPx / Math.max(1, r.width * r.height));
+        this.qualityCap = ratio;
+        // Keep the adaptive downscale across resizes rather than snapping back to full size.
+        if (this.effectiveDpr == null || this.effectiveDpr > ratio) this.effectiveDpr = ratio;
+        this.canvas.width = Math.max(1, Math.round(r.width * this.effectiveDpr));
+        this.canvas.height = Math.max(1, Math.round(r.height * this.effectiveDpr));
+    }
+
+    // Pointer events give clientX/Y in CSS pixels of the *viewport*; the camera works in the
+    // canvas' own box. Adding the canvas origin only matters when the canvas is not at (0,0),
+    // but it also keeps taps aligned if the page ever gets a margin or the canvas is inset.
+    eventToLocal(e) {
+        return [e.clientX - (this.origX || 0), e.clientY - (this.origY || 0)];
     }
 
     // Which towers should be drawn: everything within the view plus any owned tower.
@@ -2089,7 +2179,7 @@ class Renderer {
         this.fog = view && view.fog ? view.fog : null;
         const ctx = this.ctx;
         const { cw, ch } = this;
-        ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+        ctx.setTransform(this.effectiveDpr, 0, 0, this.effectiveDpr, 0, 0);
         ctx.fillStyle = BG;
         ctx.fillRect(0, 0, cw, ch);
 
@@ -2122,22 +2212,44 @@ class Renderer {
         return COLORS.enemy;
     }
 
+    // Territory halos. `createRadialGradient` is one of the most expensive Canvas 2D calls, so
+    // each (colour, radius-bucket) pair is baked once into a small offscreen canvas and then
+    // blitted — the same trick sprite frameworks use for glow rings.
+    halo(colour, r) {
+        const bucket = Math.max(8, Math.round(r / 4) * 4);   // 4px buckets keep the cache tiny
+        const key = `${colour}|${bucket}`;
+        let c = this.haloCache.get(key);
+        if (c) return c;
+        c = document.createElement('canvas');
+        const d = bucket * 2;
+        c.width = d; c.height = d;
+        const g2 = c.getContext('2d');
+        const grad = g2.createRadialGradient(bucket, bucket, 0, bucket, bucket, bucket);
+        grad.addColorStop(0, `rgba(${colour},0.55)`);
+        grad.addColorStop(1, `rgba(${colour},0)`);
+        g2.fillStyle = grad;
+        g2.fillRect(0, 0, d, d);
+        this.haloCache.set(key, c);
+        return c;
+    }
+
     drawTerritory(ctx, game, visible) {
         const fog = this.fog;
         const z = this.camera.zoom;
         const r = Math.max(12, z * 2.2);
+        const bucket = Math.max(8, Math.round(r / 4) * 4);
+        const size = bucket * 2;
         ctx.save();
         ctx.globalAlpha = 0.10;
         for (const t of visible) {
             if (t.owner == null) continue;
             if (fog && !fog(t)) continue;
             const c = this.colorFor(game, t.owner, game.view);
-            const [sx, sy] = this.camera.toScreen(integerPosition(t.x, t.y)[0], integerPosition(t.x, t.y)[1], this.cw, this.ch);
-            const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
-            g.addColorStop(0, `rgba(${c[0]},${c[1]},${c[2]},0.55)`);
-            g.addColorStop(1, `rgba(${c[0]},${c[1]},${c[2]},0)`);
-            ctx.fillStyle = g;
-            ctx.fillRect(sx - r, sy - r, r * 2, r * 2);
+            const p = integerPosition(t.x, t.y);
+            const [sx, sy] = this.camera.toScreen(p[0], p[1], this.cw, this.ch);
+            // Skip halos entirely outside the viewport instead of drawing off-screen squares.
+            if (sx + bucket < 0 || sy + bucket < 0 || sx - bucket > this.cw || sy - bucket > this.ch) continue;
+            ctx.drawImage(this.halo(this.shade(c, 1), bucket), sx - bucket, sy - bucket, size, size);
         }
         ctx.restore();
     }
@@ -2478,6 +2590,7 @@ const UNIT_TINT = {
 // "+1 capture" pings, and a tiny WebAudio synthesiser (no asset needed).
 
 
+
 class Effects {
     constructor() {
         this.items = [];          // {kind, x, y, t, life, ...}
@@ -2654,16 +2767,13 @@ class Effects {
 // Each one carries a tower so clicking it can jump there.
 
 
-const ALERT_TEXT = {
-    rulerAttack: ['Your King is under attack!', 'If they die, you lose the game'],
-    rulerUnsafe: ['Move your King to safety',
-        'Shielded Headquarters or Bunkers near the center of your territory provide the most protection'],
-    capture: ['Capture more towers', 'Drag units from your towers to outside your borders'],
-    upgrade: ['Upgrade a tower', 'Click a tower to show upgrade options'],
-    full: ['A tower is full', 'Drag away units to make room for more'],
-    overflow: ['A tower is overflowing', 'Drag away units to stop them from disappearing'],
-    zombies: ['Zombies sighted', 'Escape them by moving in the opposite direction'],
-};
+
+
+// Keys, not text: the board is re-evaluated every game second, so the strings are looked up
+// on the fly and a language switch is picked up on the next tick.
+const ALERT_KINDS = [
+    'rulerAttack', 'rulerUnsafe', 'capture', 'upgrade', 'full', 'overflow', 'zombies',
+];
 
 class AlertBoard {
     constructor() {
@@ -2729,8 +2839,7 @@ class AlertBoard {
     }
 
     item(kind, tower) {
-        const [title, hint] = ALERT_TEXT[kind];
-        return { kind, title, hint, tower };
+        return { kind, title: t(`alert.${kind}.title`), hint: t(`alert.${kind}.hint`), tower };
     }
 
     // "A tower is full / overflowing" + "zombies are attacking this tower".
@@ -2764,6 +2873,1227 @@ function* neighborsOf(t) {
     }
 }
 
+// ---- i18n/zh.js ----
+// SPDX-FileCopyrightText: 2026 Kiomet clone contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// 简体中文（默认语言）。所有界面文案的唯一来源：其它语言缺 key 时回退到这里。
+
+const __default_i18n_zh_js = {
+    meta: { name: '中文', short: '中', dir: 'ltr', htmlLang: 'zh-CN', font: null },
+
+    // ---------------- 通用 ----------------
+    'app.title': 'Kiomet — 实时领地塔防',
+    'common.close': '关闭',
+    'common.cancel': '取消',
+    'common.ok': '确定',
+    'common.language': '语言',
+
+    // ---------------- 底栏 / 顶栏 ----------------
+    'hud.score': '得分',
+    'hud.towers': '塔',
+    'hud.life': '生命',
+    'hud.leaderboard': '排行榜',
+    'hud.footer': '{towers} 座塔 · {players} 名玩家',
+
+    // ---------------- 聊天 ----------------
+    'chat.placeholder': '说点什么…',
+
+    // ---------------- 缩放 ----------------
+    'zoom.out': '缩小',
+    'zoom.in': '放大',
+    'zoom.center': '找到我的国王',
+
+    // ---------------- 控制按钮 ----------------
+    'btn.pause': '暂停',
+    'btn.resume': '继续',
+    'btn.speed': '游戏速度',
+    'btn.god': '无敌',
+    'btn.fog': '迷雾:开',
+    'btn.fogOff': '迷雾:关',
+    'btn.fogTitle': '战争迷雾（B 键切换）',
+    'btn.help': '帮助',
+    'btn.towers': '塔',
+    'btn.units': '单位',
+    'btn.newgame': '新游戏',
+
+    // ---------------- 开局面板 ----------------
+    'spawn.sub': '实时领地塔防 · 单机复刻',
+    'spawn.name': '昵称',
+    'spawn.play': '开始',
+
+    // ---------------- 提示条 ----------------
+    'toast.godOn': '无敌模式已开启 — 你的国王不会阵亡',
+    'toast.godOff': '无敌模式已关闭',
+    'toast.supplyOn': '显示全部补给线（R）',
+    'toast.supplyOff': '已隐藏补给线',
+    'toast.prereq': '缺少前置条件',
+    'toast.supplyRemoved': '已删除补给线',
+    'toast.supplyNone': '没有可删除的补给线',
+    'toast.kingConfirm': '把指针停在目标上片刻即可派出国王',
+    'toast.intro': '单击塔打开菜单 · 从我方塔拖动可派兵 · H 键找到国王',
+    'toast.menuHint': '单击可以跳转',
+
+    // ---------------- 警报（对应原版 alerts.rs） ----------------
+    'alert.rulerAttack.title': '你的国王正被攻击！',
+    'alert.rulerAttack.hint': '国王阵亡即出局',
+    'alert.rulerUnsafe.title': '把国王转移到安全的地方',
+    'alert.rulerUnsafe.hint': '位于领地中央、有护盾的总部或地堡最能保护国王',
+    'alert.capture.title': '占领更多的塔',
+    'alert.capture.hint': '从你的塔把部队拖到领地之外',
+    'alert.upgrade.title': '升级一座塔',
+    'alert.upgrade.hint': '单击一座塔查看升级选项',
+    'alert.full.title': '有塔已经满了',
+    'alert.full.hint': '拖走部队，为新的单位腾出空间',
+    'alert.overflow.title': '有塔正在溢出',
+    'alert.overflow.hint': '拖走多余部队，否则它们会消失',
+    'alert.zombies.title': '发现僵尸',
+    'alert.zombies.hint': '朝反方向移动来摆脱它们',
+    'alert.kingDead': '你的国王阵亡了！',
+
+    // ---------------- 死亡原因 ----------------
+    'death.default': '你的国王阵亡了！',
+    'death.byZombies': '国王被僵尸杀死了！',
+    'death.byPlayer': '国王被 {player} 的 {unit} 杀死了！',
+    'death.byPlayerNoUnit': '国王被 {player} 杀死了！',
+    'death.someone': '某人',
+    'death.zombies': '僵尸',
+
+    // ---------------- 塔菜单 ----------------
+    'menu.upgrading': '升级中… {seconds} 秒',
+    'menu.upgradeTo': '升级为 {tower}',
+    'menu.downgradeTo': '降级为 {tower}',
+    'menu.cancelSupply': '取消补给线',
+    'menu.hintMobile': '拖动可以派兵。先选中再拖动可建立补给线。',
+    'menu.hintStatic': '拖动可以派兵。',
+    'menu.unowned': '无主',
+    'menu.requestAlly': '请求结盟',
+    'menu.acceptAlly': '接受结盟',
+    'menu.breakAlly': '解除结盟',
+
+    // ---------------- 引擎错误 ----------------
+    'err.sourceNotOwned': '出发塔不属于你',
+    'err.emptyForce': '没有可派出的部队',
+    'err.pathTooShort': '路径太短',
+    'err.pathTooLong': '路径太长',
+    'err.sourceMismatch': '出发塔不匹配',
+    'err.duplicateTower': '路径中有重复的塔',
+    'err.edgeTooLong': '道路连接太远',
+    'err.notNeighbor': '两座塔之间没有道路',
+    'err.notGenerated': '目标塔不存在',
+    'err.invalidSupply': '这座塔无法建立补给线',
+    'err.noTower': '塔不存在',
+    'err.notOwned': '这座塔不属于你',
+    'err.upgradePending': '升级尚未完成',
+    'err.badType': '无效的塔类型',
+    'err.prereq': '缺少前置条件',
+    'err.invalidUpgrade': '无法这样升级',
+
+    // ---------------- 帮助 ----------------
+    'help.title': '帮助',
+    'help.body': `
+<p>Kiomet 是一款即时战略游戏：把部队派往各座塔来占领它们，扩张你的领地。</p>
+<h3>如何游玩</h3>
+<p>拖动部队占领塔。要升级一座塔，先单击它，再单击可用的升级。每个升级旁会列出它的前置条件。</p>
+<h3>如何获胜</h3>
+<p>占领塔并尽可能久地守住它们来获得分数。保护好你的国王 —— 失去国王就等于输掉本局。
+地堡或总部能承受几枚核弹。</p>
+<h3>补给线</h3>
+<p>会产出单位的塔可以自动送兵。单击一座塔打开菜单，然后照常拖动；如果路径上出现移动的箭头，
+说明补给线建立成功。按住 <b>R</b> 显示你全部的补给线。再画一次或按 <b>Shift+R</b> 可以删除。</p>
+<h3>结盟</h3>
+<p>选中其他玩家的塔，点击握手按钮即可请求或接受结盟。在解除结盟之前，双方都无法攻击对方。</p>
+<h3>快捷键</h3>
+<p><b>H</b> 找到国王 · <b>Q</b>/<b>E</b> 缩放 · <b>WASD</b> 或方向键平移 ·
+<b>T</b> 标记同类塔 · <b>R</b> 补给线 · <b>B</b> 战争迷雾 ·
+<b>空格</b> 暂停 · <b>Esc</b> 关闭面板。</p>`,
+
+    // ---------------- 塔资料页 ----------------
+    'towers.title': '塔',
+    'towers.lead': '共 27 种塔。实线是升级路线，虚线是前置条件。',
+    'towers.upgradesFrom': '由 {icon} <b>{tower}</b> 升级而来（{seconds} 秒）',
+    'towers.upgradesFromReq': '由 {icon} <b>{tower}</b> 升级而来（{seconds} 秒），需要 {reqs}',
+    'towers.foundOnMap': '可在地图上直接占领。',
+    'towers.canContain': '最多容纳 {units}。',
+    'towers.generates': '产出 {units}',
+    'towers.generatesEvery': '{unit}（每 {seconds} 秒）',
+    'towers.generatesNothing': '不产出单位',
+    'towers.worth': '，价值 {points} 分。',
+    'towers.sensor': '视野范围比 Mine 高 {percent}%。',
+    'towers.projector': '可以沿道路派出护盾。',
+
+    // ---------------- 单位资料页 ----------------
+    'units.title': '单位',
+    'units.lead': '共 10 种单位。它们大体按下面的顺序交战 —— 护盾永远最先承受伤害。',
+    'units.producedBy': '由 {makers} 生产。',
+    'units.damage': '造成 {surface} 点伤害。',
+    'units.damageBoth': '对地面造成 {surface} 点伤害，对空中造成 {air} 点伤害。',
+    'units.infinite': '无限',
+    'units.speed.slow': '移动速度慢。',
+    'units.speed.normal': '移动速度中等。',
+    'units.speed.fast': '移动速度快。',
+    'units.speed.shield': '不会移动。',
+    'units.shieldSpecial': '除非由投射器派出，否则不会移动；被派出时移动很快。',
+    'units.range.short': '射程短。',
+    'units.range.medium': '射程中等。',
+    'units.range.long': '射程长。',
+    'units.weight': '对直升机而言重量为 {weight}。',
+    'units.chopper': '可以搭载其它单位（重量 4）。',
+    'units.emp': '使一座塔瘫痪 60 秒。',
+    'units.overflow': '最多可以临时溢出 {count} 个。',
+    'units.king': '使护盾上限提高 {boost}。一旦阵亡，你就输掉本局。',
+
+    // ---------------- 名称：塔 ----------------
+    'tower.Airfield': '机场',
+    'tower.Armory': '军械库',
+    'tower.Artillery': '炮兵阵地',
+    'tower.Barracks': '兵营',
+    'tower.Bunker': '地堡',
+    'tower.Centrifuge': '离心机',
+    'tower.City': '城市',
+    'tower.Cliff': '悬崖',
+    'tower.Ews': '预警机',
+    'tower.Factory': '工厂',
+    'tower.Generator': '发电机',
+    'tower.Headquarters': '总部',
+    'tower.Helipad': '直升机坪',
+    'tower.Launcher': '发射装置',
+    'tower.Mine': '矿场',
+    'tower.Projector': '投射器',
+    'tower.Quarry': '采石场',
+    'tower.Radar': '雷达',
+    'tower.Rampart': '壁垒',
+    'tower.Reactor': '反应堆',
+    'tower.Refinery': '炼油厂',
+    'tower.Rocket': '火箭',
+    'tower.Runway': '跑道',
+    'tower.Satellite': '卫星',
+    'tower.Silo': '发射井',
+    'tower.Town': '城镇',
+    'tower.Village': '村庄',
+
+    // ---------------- 名称：单位 ----------------
+    'unit.Shield': '护盾',
+    'unit.Fighter': '战斗机',
+    'unit.Chopper': '直升机',
+    'unit.Bomber': '轰炸机',
+    'unit.Tank': '坦克',
+    'unit.Soldier': '步兵',
+    'unit.Shell': '炮弹',
+    'unit.Emp': '电磁脉冲弹',
+    'unit.Nuke': '核弹',
+    'unit.King': '国王',
+};
+
+// ---- i18n/en.js ----
+// SPDX-FileCopyrightText: 2026 Kiomet clone contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// English. Wording follows upstream Kiomet (client/src/ui/translations/help/en.md and the
+// /towers and /units reference pages) so the reference dialogs read like the original.
+
+const __default_i18n_en_js = {
+    meta: { name: 'English', short: 'EN', dir: 'ltr', htmlLang: 'en', font: null },
+
+    // ---------------- generic ----------------
+    'app.title': 'Kiomet — real-time territory defense',
+    'common.close': 'Close',
+    'common.cancel': 'Cancel',
+    'common.ok': 'OK',
+    'common.language': 'Language',
+
+    // ---------------- HUD ----------------
+    'hud.score': 'Score',
+    'hud.towers': 'Towers',
+    'hud.life': 'Life',
+    'hud.leaderboard': 'Leaderboard',
+    'hud.footer': '{towers} towers · {players} players',
+
+    // ---------------- chat ----------------
+    'chat.placeholder': 'Say something…',
+
+    // ---------------- zoom ----------------
+    'zoom.out': 'Zoom out',
+    'zoom.in': 'Zoom in',
+    'zoom.center': 'Find my King',
+
+    // ---------------- control buttons ----------------
+    'btn.pause': 'Pause',
+    'btn.resume': 'Resume',
+    'btn.speed': 'Game speed',
+    'btn.god': 'God',
+    'btn.fog': 'Fog: on',
+    'btn.fogOff': 'Fog: off',
+    'btn.fogTitle': 'Fog of war (press B)',
+    'btn.help': 'Help',
+    'btn.towers': 'Towers',
+    'btn.units': 'Units',
+    'btn.newgame': 'New game',
+
+    // ---------------- spawn panel ----------------
+    'spawn.sub': 'Real-time territory defense · offline remake',
+    'spawn.name': 'Nickname',
+    'spawn.play': 'Play',
+
+    // ---------------- toasts ----------------
+    'toast.godOn': 'God mode on — your King cannot die',
+    'toast.godOff': 'God mode off',
+    'toast.supplyOn': 'Showing all supply lines (R)',
+    'toast.supplyOff': 'Supply lines hidden',
+    'toast.prereq': 'Missing prerequisite',
+    'toast.supplyRemoved': 'Supply line removed',
+    'toast.supplyNone': 'No supply lines to remove',
+    'toast.kingConfirm': 'Hold the pointer on the destination for a moment to send your King',
+    'toast.intro': 'Click a tower for its menu · drag from your towers to send units · H finds your King',
+    'toast.menuHint': 'Click to jump',
+
+    // ---------------- alerts ----------------
+    'alert.rulerAttack.title': 'Your King is under attack!',
+    'alert.rulerAttack.hint': 'If they die, you lose the game',
+    'alert.rulerUnsafe.title': 'Move your King to safety',
+    'alert.rulerUnsafe.hint': 'Shielded Headquarters or Bunkers near the center of your territory provide the most protection',
+    'alert.capture.title': 'Capture more towers',
+    'alert.capture.hint': 'Drag units from your towers to outside your borders',
+    'alert.upgrade.title': 'Upgrade a tower',
+    'alert.upgrade.hint': 'Click a tower to show upgrade options',
+    'alert.full.title': 'A tower is full',
+    'alert.full.hint': 'Drag away units to make room for more',
+    'alert.overflow.title': 'A tower is overflowing',
+    'alert.overflow.hint': 'Drag away units to stop them from disappearing',
+    'alert.zombies.title': 'Zombies sighted',
+    'alert.zombies.hint': 'Escape them by moving in the opposite direction',
+    'alert.kingDead': 'Your King was killed!',
+
+    // ---------------- death reason ----------------
+    'death.default': 'Your King was killed!',
+    'death.byZombies': 'King killed by zombies!',
+    'death.byPlayer': "King killed by {player}'s {unit}!",
+    'death.byPlayerNoUnit': 'King killed by {player}!',
+    'death.someone': 'someone',
+    'death.zombies': 'zombies',
+
+    // ---------------- tower menu ----------------
+    'menu.upgrading': 'Upgrading… {seconds}s',
+    'menu.upgradeTo': 'Upgrade to {tower}',
+    'menu.downgradeTo': 'Downgrade to {tower}',
+    'menu.cancelSupply': 'Cancel supply line',
+    'menu.hintMobile': 'Drag to send units. Select first, then drag to set a supply line.',
+    'menu.hintStatic': 'Drag to send units.',
+    'menu.unowned': 'Unowned',
+    'menu.requestAlly': 'Request alliance',
+    'menu.acceptAlly': 'Accept alliance',
+    'menu.breakAlly': 'Break alliance',
+
+    // ---------------- engine errors ----------------
+    'err.sourceNotOwned': 'Source tower is not yours',
+    'err.emptyForce': 'Nothing to send',
+    'err.pathTooShort': 'Path too short',
+    'err.pathTooLong': 'Path too long',
+    'err.sourceMismatch': 'Source tower mismatch',
+    'err.duplicateTower': 'Duplicate tower in path',
+    'err.edgeTooLong': 'Road too long',
+    'err.notNeighbor': 'No road between those towers',
+    'err.notGenerated': 'That tower does not exist',
+    'err.invalidSupply': 'This tower cannot start a supply line',
+    'err.noTower': 'No tower there',
+    'err.notOwned': 'That tower is not yours',
+    'err.upgradePending': 'Upgrade still in progress',
+    'err.badType': 'Invalid tower type',
+    'err.prereq': 'Missing prerequisite',
+    'err.invalidUpgrade': 'Cannot upgrade that way',
+
+    // ---------------- help ----------------
+    'help.title': 'Help',
+    'help.body': `
+<p>Kiomet is a real-time strategy game: expand your territory by sending units to capture towers.</p>
+<h3>How to play</h3>
+<p>Drag units to capture towers. To upgrade a tower, click it and then click an available upgrade.
+Upgrades list their requirements next to them.</p>
+<h3>How to win</h3>
+<p>Earn points by capturing towers and holding them as long as possible. Protect your King —
+losing it costs you the game. A Bunker or Headquarters can survive a few Nukes.</p>
+<h3>Supply lines</h3>
+<p>Towers that make units can send them automatically. Click a tower to open its menu, then drag
+from it as normal; if the path shows moving arrows, you succeeded. Hold <b>R</b> to show all your
+supply lines. Delete one by drawing it again or with <b>Shift+R</b>.</p>
+<h3>Alliances</h3>
+<p>Select a tower of another player and click the handshake button to request or accept an
+alliance. Until it is broken, neither side can attack the other.</p>
+<h3>Keys</h3>
+<p><b>H</b> find your King · <b>Q</b>/<b>E</b> zoom · <b>WASD</b> or arrows to pan ·
+<b>T</b> mark towers of the selected kind · <b>R</b> supply lines · <b>B</b> fog of war ·
+<b>Space</b> pause · <b>Esc</b> close menus.</p>`,
+
+    // ---------------- towers reference ----------------
+    'towers.title': 'Towers',
+    'towers.lead': 'The 27 towers. Solid lines are upgrades, dashed lines are prerequisites.',
+    'towers.upgradesFrom': 'Upgrades from {icon} <b>{tower}</b> (in {seconds}s)',
+    'towers.upgradesFromReq': 'Upgrades from {icon} <b>{tower}</b> (in {seconds}s), requires {reqs}',
+    'towers.foundOnMap': 'Found on the map.',
+    'towers.canContain': 'Can contain {units}.',
+    'towers.generates': 'Generates {units}',
+    'towers.generatesEvery': '{unit} (every {seconds}s)',
+    'towers.generatesNothing': 'nothing',
+    'towers.worth': ', worth {points} point.',
+    'towers.sensor': 'Has a {percent}% higher visual range.',
+    'towers.projector': 'Can send Shields along roads.',
+
+    // ---------------- units reference ----------------
+    'units.title': 'Units',
+    'units.lead': 'The 10 units. They generally fight in the order listed — shield always absorbs damage first.',
+    'units.producedBy': 'Produced by {makers}.',
+    'units.damage': 'Does {surface} damage.',
+    'units.damageBoth': 'Does {surface} damage against surface, {air} damage against air.',
+    'units.infinite': 'infinite',
+    'units.speed.slow': 'Travels at a slow speed.',
+    'units.speed.normal': 'Travels at a moderate speed.',
+    'units.speed.fast': 'Travels at a fast speed.',
+    'units.speed.shield': 'Is immobile.',
+    'units.shieldSpecial': 'Immobile unless sent from a Projector, in which case it travels fast.',
+    'units.range.short': 'Has a short range.',
+    'units.range.medium': 'Has a medium range.',
+    'units.range.long': 'Has a long range.',
+    'units.weight': 'Has weight of {weight} for Choppers.',
+    'units.chopper': 'Can carry other units (weight of 4).',
+    'units.emp': 'Disables a tower for 60s.',
+    'units.overflow': 'Up to {count} can temporarily overflow a tower.',
+    'units.king': 'Boosts shield capacity by {boost}. If it dies, you lose the game.',
+
+    // ---------------- names: towers ----------------
+    'tower.Airfield': 'Airfield',
+    'tower.Armory': 'Armory',
+    'tower.Artillery': 'Artillery',
+    'tower.Barracks': 'Barracks',
+    'tower.Bunker': 'Bunker',
+    'tower.Centrifuge': 'Centrifuge',
+    'tower.City': 'City',
+    'tower.Cliff': 'Cliff',
+    'tower.Ews': 'EWS',
+    'tower.Factory': 'Factory',
+    'tower.Generator': 'Generator',
+    'tower.Headquarters': 'Headquarters',
+    'tower.Helipad': 'Helipad',
+    'tower.Launcher': 'Launcher',
+    'tower.Mine': 'Mine',
+    'tower.Projector': 'Projector',
+    'tower.Quarry': 'Quarry',
+    'tower.Radar': 'Radar',
+    'tower.Rampart': 'Rampart',
+    'tower.Reactor': 'Reactor',
+    'tower.Refinery': 'Refinery',
+    'tower.Rocket': 'Rocket',
+    'tower.Runway': 'Runway',
+    'tower.Satellite': 'Satellite',
+    'tower.Silo': 'Silo',
+    'tower.Town': 'Town',
+    'tower.Village': 'Village',
+
+    // ---------------- names: units ----------------
+    'unit.Shield': 'Shield',
+    'unit.Fighter': 'Fighter',
+    'unit.Chopper': 'Chopper',
+    'unit.Bomber': 'Bomber',
+    'unit.Tank': 'Tank',
+    'unit.Soldier': 'Soldier',
+    'unit.Shell': 'Shell',
+    'unit.Emp': 'EMP',
+    'unit.Nuke': 'Nuke',
+    'unit.King': 'King',
+};
+
+// ---- i18n/ja.js ----
+// SPDX-FileCopyrightText: 2026 Kiomet clone contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// 日本語.
+
+const __default_i18n_ja_js = {
+    meta: { name: '日本語', short: '日', dir: 'ltr', htmlLang: 'ja', font: null },
+
+    // ---------------- 共通 ----------------
+    'app.title': 'Kiomet — リアルタイム領土防衛',
+    'common.close': '閉じる',
+    'common.cancel': 'キャンセル',
+    'common.ok': 'OK',
+    'common.language': '言語',
+
+    // ---------------- ステータス ----------------
+    'hud.score': 'スコア',
+    'hud.towers': 'タワー',
+    'hud.life': '生存',
+    'hud.leaderboard': 'ランキング',
+    'hud.footer': 'タワー {towers} 基 · プレイヤー {players} 人',
+
+    // ---------------- チャット ----------------
+    'chat.placeholder': 'メッセージを入力…',
+
+    // ---------------- ズーム ----------------
+    'zoom.out': '縮小',
+    'zoom.in': '拡大',
+    'zoom.center': '自分のキングを探す',
+
+    // ---------------- ボタン ----------------
+    'btn.pause': '一時停止',
+    'btn.resume': '再開',
+    'btn.speed': 'ゲーム速度',
+    'btn.god': '無敵',
+    'btn.fog': '霧:オン',
+    'btn.fogOff': '霧:オフ',
+    'btn.fogTitle': '戦争の霧（B キーで切替）',
+    'btn.help': 'ヘルプ',
+    'btn.towers': 'タワー',
+    'btn.units': 'ユニット',
+    'btn.newgame': '新しいゲーム',
+
+    // ---------------- 開始画面 ----------------
+    'spawn.sub': 'リアルタイム領土防衛 · オフライン版',
+    'spawn.name': 'ニックネーム',
+    'spawn.play': '開始',
+
+    // ---------------- トースト ----------------
+    'toast.godOn': '無敵モード オン — キングは死にません',
+    'toast.godOff': '無敵モード オフ',
+    'toast.supplyOn': 'すべての補給線を表示（R）',
+    'toast.supplyOff': '補給線を非表示にしました',
+    'toast.prereq': '前提条件が足りません',
+    'toast.supplyRemoved': '補給線を削除しました',
+    'toast.supplyNone': '削除できる補給線がありません',
+    'toast.kingConfirm': '目的地にカーソルをしばらく置くとキングを送れます',
+    'toast.intro': 'タワーをクリックでメニュー · 自軍のタワーからドラッグで出兵 · H でキングへ',
+    'toast.menuHint': 'クリックで移動',
+
+    // ---------------- アラート ----------------
+    'alert.rulerAttack.title': 'キングが攻撃されています！',
+    'alert.rulerAttack.hint': '倒されるとゲームオーバーです',
+    'alert.rulerUnsafe.title': 'キングを安全な場所へ移動しましょう',
+    'alert.rulerUnsafe.hint': '領土の中央付近にあるシールド付きの本拠地やバンカーが最も安全です',
+    'alert.capture.title': 'もっとタワーを占領しましょう',
+    'alert.capture.hint': '自軍のタワーから領土の外へユニットをドラッグします',
+    'alert.upgrade.title': 'タワーをアップグレードしましょう',
+    'alert.upgrade.hint': 'タワーをクリックすると強化の候補が表示されます',
+    'alert.full.title': 'タワーが満杯です',
+    'alert.full.hint': 'ユニットをドラッグして空きを作りましょう',
+    'alert.overflow.title': 'タワーがあふれています',
+    'alert.overflow.hint': 'ユニットをドラッグしないと消えてしまいます',
+    'alert.zombies.title': 'ゾンビを発見',
+    'alert.zombies.hint': '反対方向へ移動して逃げましょう',
+    'alert.kingDead': 'キングが倒されました！',
+
+    // ---------------- 死因 ----------------
+    'death.default': 'キングが倒されました！',
+    'death.byZombies': 'キングはゾンビに倒されました！',
+    'death.byPlayer': 'キングは {player} の {unit} に倒されました！',
+    'death.byPlayerNoUnit': 'キングは {player} に倒されました！',
+    'death.someone': '誰か',
+    'death.zombies': 'ゾンビ',
+
+    // ---------------- タワーメニュー ----------------
+    'menu.upgrading': '強化中… {seconds} 秒',
+    'menu.upgradeTo': '{tower} へ強化',
+    'menu.downgradeTo': '{tower} へ降格',
+    'menu.cancelSupply': '補給線を解除',
+    'menu.hintMobile': 'ドラッグで出兵。先に選択してからドラッグすると補給線になります。',
+    'menu.hintStatic': 'ドラッグで出兵。',
+    'menu.unowned': '無主',
+    'menu.requestAlly': '同盟を申し込む',
+    'menu.acceptAlly': '同盟を承諾',
+    'menu.breakAlly': '同盟を解消',
+
+    // ---------------- エラー ----------------
+    'err.sourceNotOwned': '出発タワーが自軍のものではありません',
+    'err.emptyForce': '送れるユニットがありません',
+    'err.pathTooShort': '経路が短すぎます',
+    'err.pathTooLong': '経路が長すぎます',
+    'err.sourceMismatch': '出発タワーが一致しません',
+    'err.duplicateTower': '経路に同じタワーがあります',
+    'err.edgeTooLong': '道が長すぎます',
+    'err.notNeighbor': 'このタワー同士は道でつながっていません',
+    'err.notGenerated': 'そのタワーは存在しません',
+    'err.invalidSupply': 'このタワーは補給線を作れません',
+    'err.noTower': 'そこにタワーはありません',
+    'err.notOwned': 'そのタワーは自軍のものではありません',
+    'err.upgradePending': '強化がまだ完了していません',
+    'err.badType': 'タワーの種類が無効です',
+    'err.prereq': '前提条件が足りません',
+    'err.invalidUpgrade': 'そのような強化はできません',
+
+    // ---------------- ヘルプ ----------------
+    'help.title': 'ヘルプ',
+    'help.body': `
+<p>Kiomet はリアルタイムストラテジーです。ユニットを送ってタワーを占領し、領土を広げましょう。</p>
+<h3>遊び方</h3>
+<p>ユニットをドラッグしてタワーを占領します。タワーを強化するには、まずタワーをクリックし、
+次に可能な強化をクリックします。強化の横には必要な条件が表示されます。</p>
+<h3>勝ち方</h3>
+<p>タワーを占領し、できるだけ長く保持して得点を稼ぎます。キングを守ってください —
+失うとゲームオーバーです。バンカーや本拠地はいくつかの核攻撃に耐えます。</p>
+<h3>補給線</h3>
+<p>ユニットを生産するタワーは自動で送り出せます。タワーをクリックしてメニューを開き、
+いつも通りドラッグしてください。経路に動く矢印が出れば成功です。<b>R</b> を押し続けると
+すべての補給線が表示されます。もう一度描くか <b>Shift+R</b> で削除できます。</p>
+<h3>同盟</h3>
+<p>他プレイヤーのタワーを選び、握手ボタンをクリックすると同盟を申し込むか承諾できます。
+解消するまで双方は攻撃できません。</p>
+<h3>キー操作</h3>
+<p><b>H</b> キングへ · <b>Q</b>/<b>E</b> ズーム · <b>WASD</b> または矢印キーで移動 ·
+<b>T</b> 同じ種類のタワーを強調 · <b>R</b> 補給線 · <b>B</b> 戦争の霧 ·
+<b>スペース</b> 一時停止 · <b>Esc</b> メニューを閉じる。</p>`,
+
+    // ---------------- タワー一覧 ----------------
+    'towers.title': 'タワー',
+    'towers.lead': '全 27 種のタワー。実線は強化、破線は前提条件です。',
+    'towers.upgradesFrom': '{icon} <b>{tower}</b> から強化（{seconds} 秒）',
+    'towers.upgradesFromReq': '{icon} <b>{tower}</b> から強化（{seconds} 秒）、{reqs} が必要',
+    'towers.foundOnMap': 'マップ上に出現します。',
+    'towers.canContain': '{units} まで収容できます。',
+    'towers.generates': '{units}を生産します',
+    'towers.generatesEvery': '{unit}（{seconds} 秒ごと）',
+    'towers.generatesNothing': '何も生産しません',
+    'towers.worth': '、{points} 点の価値があります。',
+    'towers.sensor': '視界範囲が標準より {percent}% 広いです。',
+    'towers.projector': '道路沿いにシールドを送れます。',
+
+    // ---------------- ユニット一覧 ----------------
+    'units.title': 'ユニット',
+    'units.lead': '全 10 種のユニット。原則として記載順に戦い、シールドが常に最初にダメージを受けます。',
+    'units.producedBy': '{makers} で生産されます。',
+    'units.damage': '{surface} のダメージを与えます。',
+    'units.damageBoth': '地上に {surface}、空中に {air} のダメージを与えます。',
+    'units.infinite': '無限',
+    'units.speed.slow': 'ゆっくり移動します。',
+    'units.speed.normal': '中程度の速さで移動します。',
+    'units.speed.fast': '速く移動します。',
+    'units.speed.shield': '動きません。',
+    'units.shieldSpecial': 'プロジェクターから送られた場合を除き動きません。その場合は高速で移動します。',
+    'units.range.short': '射程は短いです。',
+    'units.range.medium': '射程は中程度です。',
+    'units.range.long': '射程は長いです。',
+    'units.weight': 'チョッパーにとっての重さは {weight} です。',
+    'units.chopper': '他のユニットを輸送できます（重さ 4）。',
+    'units.emp': 'タワーを 60 秒間無効化します。',
+    'units.overflow': '最大 {count} 体まで一時的にタワーからあふれられます。',
+    'units.king': 'シールド容量を {boost} 増やします。倒されるとゲームオーバーです。',
+
+    // ---------------- タワー名 ----------------
+    'tower.Airfield': '飛行場',
+    'tower.Armory': '武器庫',
+    'tower.Artillery': '砲兵陣地',
+    'tower.Barracks': '兵舎',
+    'tower.Bunker': 'バンカー',
+    'tower.Centrifuge': '遠心分離機',
+    'tower.City': '都市',
+    'tower.Cliff': '崖',
+    'tower.Ews': '早期警戒機',
+    'tower.Factory': '工場',
+    'tower.Generator': '発電機',
+    'tower.Headquarters': '本拠地',
+    'tower.Helipad': 'ヘリポート',
+    'tower.Launcher': '発射台',
+    'tower.Mine': '鉱山',
+    'tower.Projector': 'プロジェクター',
+    'tower.Quarry': '採石場',
+    'tower.Radar': 'レーダー',
+    'tower.Rampart': '防壁',
+    'tower.Reactor': '原子炉',
+    'tower.Refinery': '精製所',
+    'tower.Rocket': 'ロケット',
+    'tower.Runway': '滑走路',
+    'tower.Satellite': '衛星',
+    'tower.Silo': 'ミサイルサイロ',
+    'tower.Town': '町',
+    'tower.Village': '村',
+
+    // ---------------- ユニット名 ----------------
+    'unit.Shield': 'シールド',
+    'unit.Fighter': '戦闘機',
+    'unit.Chopper': 'チョッパー',
+    'unit.Bomber': '爆撃機',
+    'unit.Tank': '戦車',
+    'unit.Soldier': '兵士',
+    'unit.Shell': '砲弾',
+    'unit.Emp': 'EMP',
+    'unit.Nuke': '核爆弾',
+    'unit.King': 'キング',
+};
+
+// ---- i18n/ru.js ----
+// SPDX-FileCopyrightText: 2026 Kiomet clone contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Русский.
+
+const __default_i18n_ru_js = {
+    meta: { name: 'Русский', short: 'RU', dir: 'ltr', htmlLang: 'ru', font: null },
+
+    // ---------------- общее ----------------
+    'app.title': 'Kiomet — оборона территории в реальном времени',
+    'common.close': 'Закрыть',
+    'common.cancel': 'Отмена',
+    'common.ok': 'ОК',
+    'common.language': 'Язык',
+
+    // ---------------- панель ----------------
+    'hud.score': 'Очки',
+    'hud.towers': 'Башни',
+    'hud.life': 'Жизнь',
+    'hud.leaderboard': 'Таблица лидеров',
+    'hud.footer': 'башен: {towers} · игроков: {players}',
+
+    // ---------------- чат ----------------
+    'chat.placeholder': 'Напишите что-нибудь…',
+
+    // ---------------- масштаб ----------------
+    'zoom.out': 'Уменьшить',
+    'zoom.in': 'Увеличить',
+    'zoom.center': 'Найти моего короля',
+
+    // ---------------- кнопки ----------------
+    'btn.pause': 'Пауза',
+    'btn.resume': 'Продолжить',
+    'btn.speed': 'Скорость игры',
+    'btn.god': 'Бог',
+    'btn.fog': 'Туман: вкл',
+    'btn.fogOff': 'Туман: выкл',
+    'btn.fogTitle': 'Туман войны (клавиша B)',
+    'btn.help': 'Справка',
+    'btn.towers': 'Башни',
+    'btn.units': 'Юниты',
+    'btn.newgame': 'Новая игра',
+
+    // ---------------- старт ----------------
+    'spawn.sub': 'Оборона территории в реальном времени · офлайн-ремастер',
+    'spawn.name': 'Никнейм',
+    'spawn.play': 'Играть',
+
+    // ---------------- подсказки ----------------
+    'toast.godOn': 'Режим бога включён — ваш король бессмертен',
+    'toast.godOff': 'Режим бога выключен',
+    'toast.supplyOn': 'Показаны все линии снабжения (R)',
+    'toast.supplyOff': 'Линии снабжения скрыты',
+    'toast.prereq': 'Не хватает условий',
+    'toast.supplyRemoved': 'Линия снабжения удалена',
+    'toast.supplyNone': 'Нет линий снабжения для удаления',
+    'toast.kingConfirm': 'Задержите курсор на цели, чтобы отправить короля',
+    'toast.intro': 'Щёлкните по башне, чтобы открыть меню · тащите из своих башен, чтобы отправить юнитов · H — найти короля',
+    'toast.menuHint': 'Щёлкните, чтобы перейти',
+
+    // ---------------- оповещения ----------------
+    'alert.rulerAttack.title': 'Ваш король под атакой!',
+    'alert.rulerAttack.hint': 'Если он погибнет, вы проиграете',
+    'alert.rulerUnsafe.title': 'Переместите короля в безопасное место',
+    'alert.rulerUnsafe.hint': 'Лучше всего защищают штабы и бункеры со щитами в центре вашей территории',
+    'alert.capture.title': 'Захватывайте больше башен',
+    'alert.capture.hint': 'Перетащите юнитов из своих башен за пределы границ',
+    'alert.upgrade.title': 'Улучшите башню',
+    'alert.upgrade.hint': 'Щёлкните по башне, чтобы увидеть варианты улучшения',
+    'alert.full.title': 'Одна из башен заполнена',
+    'alert.full.hint': 'Уведите юнитов, чтобы освободить место',
+    'alert.overflow.title': 'Башня переполнена',
+    'alert.overflow.hint': 'Уведите юнитов, иначе они исчезнут',
+    'alert.zombies.title': 'Замечены зомби',
+    'alert.zombies.hint': 'Уходите от них в противоположную сторону',
+    'alert.kingDead': 'Ваш король погиб!',
+
+    // ---------------- причина смерти ----------------
+    'death.default': 'Ваш король погиб!',
+    'death.byZombies': 'Короля убили зомби!',
+    'death.byPlayer': 'Короля убил {unit} игрока {player}!',
+    'death.byPlayerNoUnit': 'Короля убил игрок {player}!',
+    'death.someone': 'кто-то',
+    'death.zombies': 'зомби',
+
+    // ---------------- меню башни ----------------
+    'menu.upgrading': 'Улучшение… {seconds} с',
+    'menu.upgradeTo': 'Улучшить до {tower}',
+    'menu.downgradeTo': 'Понизить до {tower}',
+    'menu.cancelSupply': 'Отменить линию снабжения',
+    'menu.hintMobile': 'Тащите, чтобы отправить юнитов. Сначала выберите, затем тащите — так создаётся линия снабжения.',
+    'menu.hintStatic': 'Тащите, чтобы отправить юнитов.',
+    'menu.unowned': 'Без владельца',
+    'menu.requestAlly': 'Предложить союз',
+    'menu.acceptAlly': 'Принять союз',
+    'menu.breakAlly': 'Расторгнуть союз',
+
+    // ---------------- ошибки движка ----------------
+    'err.sourceNotOwned': 'Исходная башня не ваша',
+    'err.emptyForce': 'Нечего отправлять',
+    'err.pathTooShort': 'Слишком короткий путь',
+    'err.pathTooLong': 'Слишком длинный путь',
+    'err.sourceMismatch': 'Исходная башня не совпадает',
+    'err.duplicateTower': 'В пути повторяются башни',
+    'err.edgeTooLong': 'Слишком длинная дорога',
+    'err.notNeighbor': 'Между этими башнями нет дороги',
+    'err.notGenerated': 'Такой башни не существует',
+    'err.invalidSupply': 'Эта башня не может создать линию снабжения',
+    'err.noTower': 'Здесь нет башни',
+    'err.notOwned': 'Эта башня не ваша',
+    'err.upgradePending': 'Улучшение ещё не завершено',
+    'err.badType': 'Неверный тип башни',
+    'err.prereq': 'Не хватает условий',
+    'err.invalidUpgrade': 'Так улучшить нельзя',
+
+    // ---------------- справка ----------------
+    'help.title': 'Справка',
+    'help.body': `
+<p>Kiomet — стратегия в реальном времени: расширяйте территорию, отправляя юнитов захватывать башни.</p>
+<h3>Как играть</h3>
+<p>Перетаскивайте юнитов, чтобы захватывать башни. Чтобы улучшить башню, щёлкните по ней, а затем по
+доступному улучшению. Рядом с улучшениями указаны их условия.</p>
+<h3>Как победить</h3>
+<p>Зарабатывайте очки, захватывая башни и удерживая их как можно дольше. Берегите короля —
+потеря короля означает поражение. Бункер или штаб выдерживают несколько ядерных ударов.</p>
+<h3>Линии снабжения</h3>
+<p>Башни, которые производят юнитов, могут отправлять их автоматически. Щёлкните по башне, чтобы
+открыть меню, и перетащите, как обычно; если на пути появились движущиеся стрелки, всё получилось.
+Удерживайте <b>R</b>, чтобы показать все ваши линии снабжения. Удалить линию можно, нарисовав её снова,
+или сочетанием <b>Shift+R</b>.</p>
+<h3>Союзы</h3>
+<p>Выберите башню другого игрока и нажмите кнопку-рукопожатие, чтобы предложить или принять союз.
+Пока союз не расторгнут, стороны не могут атаковать друг друга.</p>
+<h3>Клавиши</h3>
+<p><b>H</b> — найти короля · <b>Q</b>/<b>E</b> — масштаб · <b>WASD</b> или стрелки — перемещение ·
+<b>T</b> — отметить башни выбранного типа · <b>R</b> — линии снабжения · <b>B</b> — туман войны ·
+<b>Пробел</b> — пауза · <b>Esc</b> — закрыть меню.</p>`,
+
+    // ---------------- башни ----------------
+    'towers.title': 'Башни',
+    'towers.lead': '27 башен. Сплошные линии — улучшения, пунктирные — условия.',
+    'towers.upgradesFrom': 'Улучшается из {icon} <b>{tower}</b> (за {seconds} с)',
+    'towers.upgradesFromReq': 'Улучшается из {icon} <b>{tower}</b> (за {seconds} с), требуется {reqs}',
+    'towers.foundOnMap': 'Находится на карте.',
+    'towers.canContain': 'Вмещает до {units}.',
+    'towers.generates': 'Производит {units}',
+    'towers.generatesEvery': '{unit} (раз в {seconds} с)',
+    'towers.generatesNothing': 'ничего',
+    'towers.worth': ', стоит {points} очк.',
+    'towers.sensor': 'Радиус обзора на {percent}% больше обычного.',
+    'towers.projector': 'Может отправлять щиты по дорогам.',
+
+    // ---------------- юниты ----------------
+    'units.title': 'Юниты',
+    'units.lead': '10 видов юнитов. Обычно они сражаются в указанном порядке — щит всегда принимает урон первым.',
+    'units.producedBy': 'Производится в {makers}.',
+    'units.damage': 'Наносит {surface} урона.',
+    'units.damageBoth': 'Наносит {surface} урона по земле и {air} урона по воздуху.',
+    'units.infinite': 'бесконечный',
+    'units.speed.slow': 'Двигается медленно.',
+    'units.speed.normal': 'Двигается со средней скоростью.',
+    'units.speed.fast': 'Двигается быстро.',
+    'units.speed.shield': 'Неподвижен.',
+    'units.shieldSpecial': 'Неподвижен, если только его не отправит проектор — тогда он летит быстро.',
+    'units.range.short': 'Имеет малый радиус действия.',
+    'units.range.medium': 'Имеет средний радиус действия.',
+    'units.range.long': 'Имеет большой радиус действия.',
+    'units.weight': 'Имеет вес {weight} для вертолётов.',
+    'units.chopper': 'Может перевозить другие юниты (вес 4).',
+    'units.emp': 'Отключает башню на 60 с.',
+    'units.overflow': 'До {count} шт. могут временно переполнить башню.',
+    'units.king': 'Увеличивает ёмкость щитов на {boost}. Если король погибнет, вы проиграете.',
+
+    // ---------------- названия башен ----------------
+    'tower.Airfield': 'Аэродром',
+    'tower.Armory': 'Арсенал',
+    'tower.Artillery': 'Артиллерия',
+    'tower.Barracks': 'Казармы',
+    'tower.Bunker': 'Бункер',
+    'tower.Centrifuge': 'Центрифуга',
+    'tower.City': 'Город',
+    'tower.Cliff': 'Утёс',
+    'tower.Ews': 'ДРЛО',
+    'tower.Factory': 'Завод',
+    'tower.Generator': 'Генератор',
+    'tower.Headquarters': 'Штаб',
+    'tower.Helipad': 'Вертолётная площадка',
+    'tower.Launcher': 'Пусковая установка',
+    'tower.Mine': 'Шахта',
+    'tower.Projector': 'Проектор',
+    'tower.Quarry': 'Каменоломня',
+    'tower.Radar': 'Радар',
+    'tower.Rampart': 'Вал',
+    'tower.Reactor': 'Реактор',
+    'tower.Refinery': 'Нефтезавод',
+    'tower.Rocket': 'Ракета',
+    'tower.Runway': 'Взлётная полоса',
+    'tower.Satellite': 'Спутник',
+    'tower.Silo': 'Шахтная установка',
+    'tower.Town': 'Посёлок',
+    'tower.Village': 'Деревня',
+
+    // ---------------- названия юнитов ----------------
+    'unit.Shield': 'Щит',
+    'unit.Fighter': 'Истребитель',
+    'unit.Chopper': 'Вертолёт',
+    'unit.Bomber': 'Бомбардировщик',
+    'unit.Tank': 'Танк',
+    'unit.Soldier': 'Солдат',
+    'unit.Shell': 'Снаряд',
+    'unit.Emp': 'ЭМИ',
+    'unit.Nuke': 'Ядерная бомба',
+    'unit.King': 'Король',
+};
+
+// ---- i18n/ar.js ----
+// SPDX-FileCopyrightText: 2026 Kiomet clone contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// العربية — note `dir: 'rtl'`: the shell flips to right-to-left, so every `left`/`right`
+// in index.html is written logically (see the [dir="rtl"] rules there).
+
+const __default_i18n_ar_js = {
+    meta: { name: 'العربية', short: 'ع', dir: 'rtl', htmlLang: 'ar', font: '"Noto Naskh Arabic","Segoe UI","Microsoft Yahei",system-ui,sans-serif' },
+
+    // ---------------- عام ----------------
+    'app.title': 'Kiomet — دفاع إقليمي فوري',
+    'common.close': 'إغلاق',
+    'common.cancel': 'إلغاء',
+    'common.ok': 'حسناً',
+    'common.language': 'اللغة',
+
+    // ---------------- لوحة المعلومات ----------------
+    'hud.score': 'النقاط',
+    'hud.towers': 'الأبراج',
+    'hud.life': 'الحياة',
+    'hud.leaderboard': 'لوحة المتصدرين',
+    'hud.footer': '{towers} برجاً · {players} لاعباً',
+
+    // ---------------- الدردشة ----------------
+    'chat.placeholder': 'اكتب شيئاً…',
+
+    // ---------------- التكبير ----------------
+    'zoom.out': 'تصغير',
+    'zoom.in': 'تكبير',
+    'zoom.center': 'ابحث عن ملكي',
+
+    // ---------------- الأزرار ----------------
+    'btn.pause': 'إيقاف مؤقت',
+    'btn.resume': 'متابعة',
+    'btn.speed': 'سرعة اللعبة',
+    'btn.god': 'وضع الخلود',
+    'btn.fog': 'الضباب: مفعّل',
+    'btn.fogOff': 'الضباب: مُعطّل',
+    'btn.fogTitle': 'ضباب الحرب (المفتاح B)',
+    'btn.help': 'مساعدة',
+    'btn.towers': 'الأبراج',
+    'btn.units': 'الوحدات',
+    'btn.newgame': 'لعبة جديدة',
+
+    // ---------------- شاشة البداية ----------------
+    'spawn.sub': 'دفاع إقليمي فوري · نسخة دون اتصال',
+    'spawn.name': 'الاسم المستعار',
+    'spawn.play': 'ابدأ',
+
+    // ---------------- التنبيهات المؤقتة ----------------
+    'toast.godOn': 'وضع الخلود مفعّل — ملكك لا يموت',
+    'toast.godOff': 'وضع الخلود مُعطّل',
+    'toast.supplyOn': 'عرض كل خطوط الإمداد (R)',
+    'toast.supplyOff': 'خطوط الإمداد مخفية',
+    'toast.prereq': 'المتطلبات السابقة ناقصة',
+    'toast.supplyRemoved': 'تم حذف خط الإمداد',
+    'toast.supplyNone': 'لا توجد خطوط إمداد لحذفها',
+    'toast.kingConfirm': 'أبقِ المؤشر على الهدف لبعض الوقت لإرسال ملكك',
+    'toast.intro': 'انقر برجاً لعرض قائمته · اسحب من أبراجك لإرسال الوحدات · المفتاح H يجد ملكك',
+    'toast.menuHint': 'انقر للانتقال',
+
+    // ---------------- التنبيهات ----------------
+    'alert.rulerAttack.title': 'ملكك يتعرض لهجوم!',
+    'alert.rulerAttack.hint': 'إذا مات فستخسر اللعبة',
+    'alert.rulerUnsafe.title': 'انقل ملكك إلى مكان آمن',
+    'alert.rulerUnsafe.hint': 'القواعد والمخابئ المدرّعة قرب وسط منطقتك توفر الحماية الأكبر',
+    'alert.capture.title': 'احتجز مزيداً من الأبراج',
+    'alert.capture.hint': 'اسحب الوحدات من أبراجك إلى ما وراء حدودك',
+    'alert.upgrade.title': 'طوّر برجاً',
+    'alert.upgrade.hint': 'انقر على برج لعرض خيارات التطوير',
+    'alert.full.title': 'أحد الأبراج ممتلئ',
+    'alert.full.hint': 'اسحب الوحدات بعيداً لإفساح المجال',
+    'alert.overflow.title': 'أحد الأبراج يفيض',
+    'alert.overflow.hint': 'اسحب الوحدات بعيداً حتى لا تختفي',
+    'alert.zombies.title': 'رُصدت زومبي',
+    'alert.zombies.hint': 'اهرب منها بالتحرك في الاتجاه المعاكس',
+    'alert.kingDead': 'قُتل ملكك!',
+
+    // ---------------- سبب الموت ----------------
+    'death.default': 'قُتل ملكك!',
+    'death.byZombies': 'قُتل الملك على يد الزومبي!',
+    'death.byPlayer': 'قُتل الملك على يد {unit} للاعب {player}!',
+    'death.byPlayerNoUnit': 'قُتل الملك على يد {player}!',
+    'death.someone': 'شخص ما',
+    'death.zombies': 'الزومبي',
+
+    // ---------------- قائمة البرج ----------------
+    'menu.upgrading': 'جارٍ التطوير… {seconds} ث',
+    'menu.upgradeTo': 'طوّر إلى {tower}',
+    'menu.downgradeTo': 'خفّض إلى {tower}',
+    'menu.cancelSupply': 'إلغاء خط الإمداد',
+    'menu.hintMobile': 'اسحب لإرسال الوحدات. اختر أولاً ثم اسحب لإنشاء خط إمداد.',
+    'menu.hintStatic': 'اسحب لإرسال الوحدات.',
+    'menu.unowned': 'بلا مالك',
+    'menu.requestAlly': 'اطلب تحالفاً',
+    'menu.acceptAlly': 'اقبل التحالف',
+    'menu.breakAlly': 'انهِ التحالف',
+
+    // ---------------- أخطاء المحرّك ----------------
+    'err.sourceNotOwned': 'برج الانطلاق ليس ملكك',
+    'err.emptyForce': 'لا شيء لإرساله',
+    'err.pathTooShort': 'المسار قصير جداً',
+    'err.pathTooLong': 'المسار طويل جداً',
+    'err.sourceMismatch': 'عدم تطابق برج الانطلاق',
+    'err.duplicateTower': 'برج مكرر في المسار',
+    'err.edgeTooLong': 'الطريق طويل جداً',
+    'err.notNeighbor': 'لا يوجد طريق بين هذين البرجين',
+    'err.notGenerated': 'هذا البرج غير موجود',
+    'err.invalidSupply': 'هذا البرج لا يمكنه بدء خط إمداد',
+    'err.noTower': 'لا يوجد برج هنا',
+    'err.notOwned': 'هذا البرج ليس ملكك',
+    'err.upgradePending': 'التطوير لم يكتمل بعد',
+    'err.badType': 'نوع برج غير صالح',
+    'err.prereq': 'المتطلبات السابقة ناقصة',
+    'err.invalidUpgrade': 'لا يمكن التطوير بهذه الطريقة',
+
+    // ---------------- المساعدة ----------------
+    'help.title': 'مساعدة',
+    'help.body': `
+<p>Kiomet لعبة استراتيجية فورية: وسّع منطقتك بإرسال الوحدات لاحتلال الأبراج.</p>
+<h3>كيف تلعب</h3>
+<p>اسحب الوحدات لاحتلال الأبراج. لتطوير برج، انقر عليه ثم انقر على تطوير متاح.
+تُدرج المتطلبات بجانب كل تطوير.</p>
+<h3>كيف تفوز</h3>
+<p>اجمع النقاط باحتلال الأبراج والحفاظ عليها أطول وقت ممكن. احمِ ملكك —
+فقدانه يعني خسارة اللعبة. يستطيع المخبأ أو القاعدة تحمّل بعض القنابل النووية.</p>
+<h3>خطوط الإمداد</h3>
+<p>الأبراج التي تنتج وحدات يمكنها إرسالها تلقائياً. انقر على برج لفتح قائمته ثم اسحب منه كالمعتاد؛
+إذا ظهرت أسهم متحركة على المسار فقد نجحت. اضغط باستمرار على <b>R</b> لعرض كل خطوط إمدادك.
+احذف خطاً بإعادة رسمه أو بـ <b>Shift+R</b>.</p>
+<h3>التحالفات</h3>
+<p>اختر برجاً للاعب آخر وانقر زر المصافحة لطلب تحالف أو قبوله.
+حتى يتم فسخه لا يستطيع أي طرف مهاجمة الآخر.</p>
+<h3>المفاتيح</h3>
+<p><b>H</b> اعثر على ملكك · <b>Q</b>/<b>E</b> تكبير · <b>WASD</b> أو الأسهم للتحريك ·
+<b>T</b> علّم أبراج النوع المحدد · <b>R</b> خطوط الإمداد · <b>B</b> ضباب الحرب ·
+<b>مسافة</b> إيقاف مؤقت · <b>Esc</b> إغلاق القوائم.</p>`,
+
+    // ---------------- صفحة الأبراج ----------------
+    'towers.title': 'الأبراج',
+    'towers.lead': 'الأبراج السبعة والعشرون. الخطوط المتصلة تطويرات، والمتقطعة متطلبات سابقة.',
+    'towers.upgradesFrom': 'يُطوَّر من {icon} <b>{tower}</b> (خلال {seconds} ث)',
+    'towers.upgradesFromReq': 'يُطوَّر من {icon} <b>{tower}</b> (خلال {seconds} ث)، ويتطلب {reqs}',
+    'towers.foundOnMap': 'موجود على الخريطة.',
+    'towers.canContain': 'يمكنه احتواء {units}.',
+    'towers.generates': 'ينتج {units}',
+    'towers.generatesEvery': '{unit} (كل {seconds} ث)',
+    'towers.generatesNothing': 'لا شيء',
+    'towers.worth': '، بقيمة {points} نقطة.',
+    'towers.sensor': 'مدى رؤيته أعلى بنسبة {percent}%.',
+    'towers.projector': 'يمكنه إرسال الدروع عبر الطرق.',
+
+    // ---------------- صفحة الوحدات ----------------
+    'units.title': 'الوحدات',
+    'units.lead': 'الوحدات العشر. تتقاتل عموماً بالترتيب المذكور — والدرع يمتص الضرر دائماً أولاً.',
+    'units.producedBy': 'يُنتَج في {makers}.',
+    'units.damage': 'يوقع {surface} من الضرر.',
+    'units.damageBoth': 'يوقع {surface} من الضرر على السطح، و{air} من الضرر على الجو.',
+    'units.infinite': 'لانهائي',
+    'units.speed.slow': 'يتحرك بسرعة بطيئة.',
+    'units.speed.normal': 'يتحرك بسرعة متوسطة.',
+    'units.speed.fast': 'يتحرك بسرعة عالية.',
+    'units.speed.shield': 'ساكن لا يتحرك.',
+    'units.shieldSpecial': 'ساكن ما لم يُرسله المبرق، وفي هذه الحالة يتحرك بسرعة.',
+    'units.range.short': 'مداه قصير.',
+    'units.range.medium': 'مداه متوسط.',
+    'units.range.long': 'مداه طويل.',
+    'units.weight': 'وزنه {weight} بالنسبة للمروحيات.',
+    'units.chopper': 'يمكنه حمل وحدات أخرى (وزن 4).',
+    'units.emp': 'يعطّل برجاً لمدة 60 ث.',
+    'units.overflow': 'يمكن أن يتجاوز البرج مؤقتاً حتى {count}.',
+    'units.king': 'يزيد سعة الدرع بمقدار {boost}. إذا مات فستخسر اللعبة.',
+
+    // ---------------- أسماء الأبراج ----------------
+    'tower.Airfield': 'مطار',
+    'tower.Armory': 'مستودع أسلحة',
+    'tower.Artillery': 'مدفعية',
+    'tower.Barracks': 'ثكنات',
+    'tower.Bunker': 'مخبأ',
+    'tower.Centrifuge': 'جهاز طرد مركزي',
+    'tower.City': 'مدينة',
+    'tower.Cliff': 'جرف',
+    'tower.Ews': 'إنذار مبكر',
+    'tower.Factory': 'مصنع',
+    'tower.Generator': 'مولّد',
+    'tower.Headquarters': 'قاعدة',
+    'tower.Helipad': 'مهبط طائرات',
+    'tower.Launcher': 'منصة إطلاق',
+    'tower.Mine': 'منجم',
+    'tower.Projector': 'مبرق',
+    'tower.Quarry': 'مقلع',
+    'tower.Radar': 'رادار',
+    'tower.Rampart': 'سور',
+    'tower.Reactor': 'مفاعل',
+    'tower.Refinery': 'مصفاة',
+    'tower.Rocket': 'صاروخ',
+    'tower.Runway': 'مدرج',
+    'tower.Satellite': 'قمر صناعي',
+    'tower.Silo': 'حفرة صواريخ',
+    'tower.Town': 'بلدة',
+    'tower.Village': 'قرية',
+
+    // ---------------- أسماء الوحدات ----------------
+    'unit.Shield': 'درع',
+    'unit.Fighter': 'مقاتلة',
+    'unit.Chopper': 'مروحية',
+    'unit.Bomber': 'قاذفة',
+    'unit.Tank': 'دبابة',
+    'unit.Soldier': 'جندي',
+    'unit.Shell': 'قذيفة',
+    'unit.Emp': 'نبضة كهرومغناطيسية',
+    'unit.Nuke': 'قنبلة نووية',
+    'unit.King': 'الملك',
+};
+
+// ---- i18n.js ----
+// SPDX-FileCopyrightText: 2026 Kiomet clone contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Translation layer. Every user-visible string lives in src/i18n/<lang>.js; the game code
+// only ever calls t('some.key', {vars}). Key names are shared across languages, so a missing
+// translation falls back to Chinese (the default language) instead of showing a raw key.
+//
+// Layout direction: a language may declare `dir: 'rtl'`. `applyDirection()` puts it on the
+// <html> element, where the [dir="rtl"] rules in index.html mirror the absolute UI.
+
+
+
+
+
+
+
+// In the single-file build the bundler strips imports and rewrites `export default X` to
+// `const __default_<module> = X`, which drops the original binding name. Resolve each
+// dictionary at call time (not at module top level) so whichever form the build provides is
+// the one that is picked up, and a temporal-dead-zone read can't happen.
+const GLOBAL = typeof globalThis !== 'undefined' ? globalThis : {};
+function raw(...names) {
+    for (const n of names) {
+        try {
+            // eslint-disable-next-line no-eval
+            const v = (0, eval)(n);
+            if (v) return v;
+        } catch { /* not defined in this build: try the next spelling */ }
+    }
+    return null;
+}
+
+const LANGUAGES = [
+    { code: 'zh', dict: () => raw('zh', '__default_i18n_zh_js') },
+    { code: 'en', dict: () => raw('en', '__default_i18n_en_js') },
+    { code: 'ja', dict: () => raw('ja', '__default_i18n_ja_js') },
+    { code: 'ru', dict: () => raw('ru', '__default_i18n_ru_js') },
+    { code: 'ar', dict: () => raw('ar', '__default_i18n_ar_js') },
+];
+
+const DEFAULT_LANG = 'zh';
+const STORAGE_KEY = 'kiomet-lang';
+
+// Flat lookup: code -> dictionary, memoised on first use so the bundler's naming differences
+// are resolved lazily rather than at module-evaluation time.
+const resolved = new Map();
+function dictFor(code) {
+    if (resolved.has(code)) return resolved.get(code);
+    const entry = LANGUAGES.find((l) => l.code === code);
+    const d = entry ? entry.dict() : null;
+    if (d) resolved.set(code, d);
+    return d;
+}
+
+function baseDict() {
+    return dictFor(DEFAULT_LANG) || {};
+}
+
+let currentCode = DEFAULT_LANG;
+let currentDict = dictFor(DEFAULT_LANG);
+
+// BCP-47 tags used for <html lang> and for the picker's aria label.
+function metaOf(code) {
+    const d = dictFor(code) || baseDict();
+    return d.meta || baseDict().meta;
+}
+
+function langCodes() {
+    return LANGUAGES.map((l) => l.code);
+}
+
+function currentLang() {
+    return currentCode;
+}
+
+// Alias used by the UI picker (kept separate from the storage helpers below).
+function langCode() {
+    return currentCode;
+}
+
+// Remember a choice for next visit. Kept here so there is exactly one place that writes it.
+function storedLang() {
+    try {
+        const v = localStorage.getItem(STORAGE_KEY);
+        return v && dictFor(v) ? v : null;
+    } catch {
+        return null;
+    }
+}
+
+function resolveLang() {
+    return storedLang() || DEFAULT_LANG;
+}
+
+function setLang(code) {
+    if (!dictFor(code)) code = DEFAULT_LANG;
+    currentCode = code;
+    currentDict = dictFor(code);
+    try { localStorage.setItem(STORAGE_KEY, code); } catch { /* private mode: keep in memory */ }
+    applyDirection();
+    return currentDict;
+}
+
+// Right-to-left languages flip the whole shell.
+function applyDirection() {
+    const meta = (currentDict || baseDict()).meta || { dir: 'ltr' };
+    if (typeof document === 'undefined') return meta;
+    const html = document.documentElement;
+    html.setAttribute('lang', meta.htmlLang || currentCode);
+    html.setAttribute('dir', meta.dir || 'ltr');
+    // Some fonts need an explicit family for a script the default stack lacks.
+    if (meta.font) html.style.setProperty('--ui-font', meta.font);
+    else html.style.removeProperty('--ui-font');
+    return meta;
+}
+
+function isRtl() {
+    return (((currentDict || baseDict()).meta || {}).dir || 'ltr') === 'rtl';
+}
+
+// {name} placeholders are replaced; unknown placeholders are left alone on purpose so a typo
+// shows up in the UI instead of silently rendering "undefined".
+function t(key, vars) {
+    const dict = currentDict || baseDict();
+    let s = dict[key];
+    if (s == null) s = baseDict()[key];
+    if (s == null) return key;
+    if (!vars) return s;
+    return String(s).replace(/\{(\w+)\}/g, (m, name) => (vars[name] != null ? String(vars[name]) : m));
+}
+
+// Tower/unit display names. `ident` is the identifier used by data.js (e.g. 'Headquarters').
+function tName(kind, ident) {
+    if (ident == null) return '';
+    return t(`${kind}.${ident}`);
+}
+
+// Rough plural: English/Japanese/Chinese/Arabic all read fine with the singular form for the
+// counts used here, and Russian needs the genitive-plural trick for "1 vs many" only in a
+// couple of places, both of which use a fixed phrase instead. Kept as a helper so future
+// languages can override it without touching call sites.
+function plural(n, one, many) {
+    return Number(n) === 1 ? one : many;
+}
+
 // ---- app.js ----
 // SPDX-FileCopyrightText: 2026 Kiomet clone contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
@@ -2780,11 +4110,11 @@ function* neighborsOf(t) {
 
 
 
-const LABEL = {
-    Ews: 'EWS', Emp: 'EMP', Ruler: 'King',
-};
+
 
 const D = (id) => document.getElementById(id);
+// Defined by code point so the source file stays encoding-independent.
+const CLOSE_GLYPH = String.fromCharCode(0x2718);
 const el = (tag, cls, html) => {
     const e = document.createElement(tag);
     if (cls) e.className = cls;
@@ -2798,6 +4128,8 @@ class App {
         this.canvas = D('canvas');
         this.renderer = new Renderer(this.canvas);
         this.camera = this.renderer.camera;
+        // Language first: everything below looks up already-translated strings.
+        setLang(resolveLang());
         this.name = localStorage.getItem('kiomet-name') || 'Guesty';
         this.godMode = localStorage.getItem('kiomet-god') === '1';
         // Fog of war (on by default, like the real game). B toggles it, as upstream cheats do.
@@ -2810,11 +4142,13 @@ class App {
         this.pinching = null;
         this.keys = new Set();
         this.lastFrame = performance.now();
+        this.lastFrameAt = this.lastFrame;
         this.acc = 0;
         this.game = null;
         this.newGame();
         this.bindInput();
         this.bindUi();
+        this.applyLanguage();
         requestAnimationFrame((t) => this.frame(t));
     }
 
@@ -2874,13 +4208,17 @@ class App {
         this.lastFrame = now;
         if (!this.paused) {
             this.acc += dt * this.speed;
+            // Cap the catch-up steps: after a long stall (tab switch, heavy GC) running eight
+            // ticks in one frame turns a stumble into a freeze. Two is enough to stay smooth;
+            // the surplus is dropped and the clock stays in the past rather than snowballing.
             let steps = 0;
-            while (this.acc >= 1 / TICK_HZ && steps < 8) {
+            while (this.acc >= 1 / TICK_HZ && steps < 2) {
                 this.game.tick();
                 this.visibility.invalidate();
                 this.acc -= 1 / TICK_HZ;
                 steps += 1;
             }
+            if (this.acc > 1 / TICK_HZ) this.acc = 0;
         }
         this.handleKeyboardPan(dt);
         // Icon overlay follows the camera; refresh it every frame like the canvas.
@@ -2906,7 +4244,29 @@ class App {
         this.effects.render(this.renderer.ctx, (x, y) => this.camera.toScreen(x, y, this.renderer.cw, this.renderer.ch), this.camera.zoom, dt);
         this.updateHud();
         if (this.selected) this.positionMenu();
+        this.trackFrameCost(now);
         requestAnimationFrame((t) => this.frame(t));
+    }
+
+    // Adaptive quality: if frames consistently exceed the budget, step the canvas resolution
+    // down; if there is plenty of headroom again, step it back up. This is the cheap version of
+    // what a real engine's dynamic-resolution scaler does, and it turns a machine that can't
+    // hold 60fps into a smooth lower-res render instead of a stuttering one.
+    trackFrameCost(now) {
+        const dtMs = now - this.lastFrameAt;
+        this.lastFrameAt = now;
+        if (!(dtMs > 0) || dtMs > 250) return;         // ignore tab-switch gaps
+        const ema = this.frameEma == null ? dtMs : this.frameEma * 0.9 + dtMs * 0.1;
+        this.frameEma = ema;
+        this.frameSamples = (this.frameSamples || 0) + 1;
+        if (this.frameSamples < 90) return;            // ~1.5s of evidence before reacting
+        this.frameSamples = 0;
+        const r = this.renderer;
+        if (ema > 22 && r.effectiveDpr > 0.75) {         // slower than ~45fps: drop resolution
+            r.setQualityScale(r.effectiveDpr * 0.85);
+        } else if (ema < 17.5 && r.effectiveDpr < r.qualityCap) {   // headroom: restore detail
+            r.setQualityScale(Math.min(r.qualityCap, r.effectiveDpr * 1.06));
+        }
     }
 
     closeMenuOnPan() {
@@ -2970,7 +4330,8 @@ class App {
             if (this.effects.audio && this.effects.audio.state === 'suspended') this.effects.audio.resume();
             cv.setPointerCapture(e.pointerId);
             this.pointers = this.pointers || new Map();
-            this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            const [lx, ly] = this.renderer.eventToLocal(e);
+            this.pointers.set(e.pointerId, { x: lx, y: ly });
             if (this.pointers.size === 2) {
                 const [a, b] = [...this.pointers.values()];
                 this.pinching = { d: Math.hypot(a.x - b.x, a.y - b.y), zoom: this.camera.zoom };
@@ -2978,21 +4339,22 @@ class App {
                 return;
             }
             if (e.button === 2 || e.shiftKey) {
-                this.pan = { x: e.clientX, y: e.clientY, cx: this.camera.x, cy: this.camera.y };
+                this.pan = { x: lx, y: ly, cx: this.camera.x, cy: this.camera.y };
                 return;
             }
-            const [wx, wy] = this.camera.toWorld(e.clientX, e.clientY, this.renderer.cw, this.renderer.ch);
+            const [wx, wy] = this.camera.toWorld(lx, ly, this.renderer.cw, this.renderer.ch);
             const t = this.towerAtWorld(wx, wy);
             this.drag = null;
             this.dragPath = null;
             if (t && t.owner === this.me.id) {
-                this.drag = { from: t, startX: e.clientX, startY: e.clientY, path: null, moved: false };
+                this.drag = { from: t, startX: lx, startY: ly, path: null, moved: false };
             }
         });
 
         cv.addEventListener('pointermove', (e) => {
+            const [lx, ly] = this.renderer.eventToLocal(e);
             if (this.pointers && this.pointers.has(e.pointerId)) {
-                this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+                this.pointers.set(e.pointerId, { x: lx, y: ly });
             }
             if (this.pinching && this.pointers.size >= 2) {
                 const [a, b] = [...this.pointers.values()];
@@ -3001,8 +4363,8 @@ class App {
                 return;
             }
             if (this.pan) {
-                this.camera.x = this.pan.cx - (e.clientX - this.pan.x) / this.camera.zoom;
-                this.camera.y = this.pan.cy - (e.clientY - this.pan.y) / this.camera.zoom;
+                this.camera.x = this.pan.cx - (lx - this.pan.x) / this.camera.zoom;
+                this.camera.y = this.pan.cy - (ly - this.pan.y) / this.camera.zoom;
                 this.camera.clamp();
                 return;
             }
@@ -3024,10 +4386,11 @@ class App {
 
         cv.addEventListener('wheel', (e) => {
             e.preventDefault();
-            const [wx, wy] = this.camera.toWorld(e.clientX, e.clientY, this.renderer.cw, this.renderer.ch);
+            const [lx, ly] = this.renderer.eventToLocal(e);
+            const [wx, wy] = this.camera.toWorld(lx, ly, this.renderer.cw, this.renderer.ch);
             const f = Math.exp(-e.deltaY * 0.0015);
             this.camera.zoom = Math.max(7, Math.min(64, this.camera.zoom * f));
-            const [nx, ny] = this.camera.toWorld(e.clientX, e.clientY, this.renderer.cw, this.renderer.ch);
+            const [nx, ny] = this.camera.toWorld(lx, ly, this.renderer.cw, this.renderer.ch);
             this.camera.x += wx - nx; this.camera.y += wy - ny;
             this.camera.clamp();
         }, { passive: false });
@@ -3049,7 +4412,7 @@ class App {
             if (k === 'e') { this.camera.zoom = Math.min(64, this.camera.zoom * 1.2); }
             if (k === 'r' && !e.shiftKey) {
                 this.showSupplyLines = !this.showSupplyLines;
-                this.toast(this.showSupplyLines ? 'Showing all supply lines (R)' : 'Supply lines hidden');
+                this.toast(this.showSupplyLines ? 'toast.supplyOn' : 'toast.supplyOff');
             } else if (k === 'r' && e.shiftKey) {
                 this.clearSupplyLines();
             }
@@ -3057,13 +4420,19 @@ class App {
             if (k === ' ') { e.preventDefault(); this.togglePause(); }
         });
         addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
+        // ResizeObserver also fires on CSS-driven box changes (zoom, sidebar, devtools),
+        // which plain `resize` misses and which silently desyncs taps from the canvas.
         addEventListener('resize', () => this.renderer.resize());
+        if (typeof ResizeObserver !== 'undefined') {
+            this.resizeObserver = new ResizeObserver(() => this.renderer.resize());
+            this.resizeObserver.observe(cv);
+        }
     }
 
     // Which tower is under the pointer? Each sprite stands on a jittered point inside its
-    // 5x5 world cell, so search the neighbouring cells and take the nearest *cell centre*
-    // (the same point the sprite is drawn around); a generous tap radius keeps fat fingers
-    // working without ever stealing the tap from a closer neighbour.
+    // 5x5 world cell, so search the neighbouring cells and compare against the *drawn* centre
+    // (integerPosition), not the raw cell coordinate 鈥?the jitter is up to a full cell, so
+    // using t.x*5 / t.y*5 picked the wrong tower and made taps miss the tower you saw.
     towerAtWorld(wx, wy) {
         let best = null, bestD = Infinity;
         const cx = Math.round(wx / 5), cy = Math.round(wy / 5);
@@ -3071,7 +4440,9 @@ class App {
             for (let dx = -1; dx <= 1; dx++) {
                 const t = this.game.tower(cx + dx, cy + dy);
                 if (!t) continue;
-                const d = Math.hypot(t.x * 5 - wx, t.y * 5 - wy);
+                if (!this.isVisible(t)) continue;
+                const p = integerPosition(t.x, t.y);
+                const d = Math.hypot(p[0] - wx, p[1] - wy);
                 if (d < bestD) { best = t; bestD = d; }
             }
         }
@@ -3081,8 +4452,9 @@ class App {
     }
 
     updateDrag(e) {
-        const [wx, wy] = this.camera.toWorld(e.clientX, e.clientY, this.renderer.cw, this.renderer.ch);
-        if (Math.hypot(e.clientX - this.drag.startX, e.clientY - this.drag.startY) > 6) this.drag.moved = true;
+        const [lx, ly] = this.renderer.eventToLocal(e);
+        const [wx, wy] = this.camera.toWorld(lx, ly, this.renderer.cw, this.renderer.ch);
+        if (Math.hypot(lx - this.drag.startX, ly - this.drag.startY) > 6) this.drag.moved = true;
         const t = this.towerAtWorld(wx, wy);
         if (t !== this.drag.to) this.drag.hoverSince = performance.now();
         this.drag.to = t;
@@ -3121,7 +4493,7 @@ class App {
         const path = drag.path;
         if (!path) return;
         if (this.rulerNeedsConfirm(drag)) {
-            this.toast('Hold the pointer on the destination for a moment to send your King');
+            this.toast('toast.kingConfirm');
             return;
         }
         const src = drag.from;
@@ -3145,9 +4517,9 @@ class App {
         const line = mine.find((t) => t.supply);
         if (line) {
             this.game.setSupplyLine(this.me.id, line.id, null);
-            this.toast('Supply line removed');
+            this.toast('toast.supplyRemoved');
         } else {
-            this.toast('No supply lines to remove');
+            this.toast('toast.supplyNone');
         }
     }
 
@@ -3187,7 +4559,7 @@ class App {
         const head = el('div', 'tm-head');
         head.appendChild(el('img', 'tm-icon', ''));
         head.querySelector('img').src = this.svgUrl(t.type, 'rgb(116,185,255)');
-        head.appendChild(el('span', 'tm-title', LABEL[t.type] || t.type));
+        head.appendChild(el('span', 'tm-title', tName('tower', t.type)));
         if (t.owner != null) {
             const p = this.game.players[t.owner];
             head.appendChild(el('span', 'tm-owner', p ? p.name : ''));
@@ -3195,7 +4567,7 @@ class App {
         menu.appendChild(head);
 
         if (t.delay > 0) {
-            menu.appendChild(el('div', 'tm-delay', `Upgrading… ${Math.ceil(t.delay / TICK_HZ)}s`));
+            menu.appendChild(el('div', 'tm-delay', t('menu.upgrading', { seconds: Math.ceil(t.delay / TICK_HZ) })));
         }
 
         // Unit rows (only what the tower can make, or already holds).
@@ -3221,7 +4593,7 @@ class App {
                 const down = name === type.basis;
                 const ok = down ? true : meetsPrereqs(name, this.me.towerCounts);
                 const row = el('button', 'tm-up' + (down ? ' down' : '') + (ok ? '' : ' locked'));
-                row.title = (down ? 'Downgrade to ' : 'Upgrade to ') + name;
+                row.title = t(down ? 'menu.downgradeTo' : 'menu.upgradeTo', { tower: tName('tower', name) });
                 const ic = el('img', 'tm-up-icon');
                 ic.src = this.svgUrl(name, down ? 'rgb(192,57,43)' : 'rgb(116,185,255)');
                 row.appendChild(ic);
@@ -3240,7 +4612,7 @@ class App {
                 }
                 row.addEventListener('click', (ev) => {
                     ev.stopPropagation();
-                    if (!ok) { this.toast('Missing prerequisite'); return; }
+                    if (!ok) { this.toast('toast.prereq'); return; }
                     const err = this.game.upgradeTower(this.me.id, t.id, name);
                     if (err) this.toast(err);
                     else { this.alertBoard.onUpgrade(); this.renderMenu(); }
@@ -3250,22 +4622,20 @@ class App {
             menu.appendChild(ups);
 
             if (t.supply) {
-                const b = el('button', 'tm-btn', 'Cancel supply line');
+                const b = el('button', 'tm-btn', t('menu.cancelSupply'));
                 b.addEventListener('click', () => {
                     this.game.setSupplyLine(this.me.id, t.id, null);
                     this.renderMenu();
                 });
                 menu.appendChild(b);
             }
-            menu.appendChild(el('div', 'tm-hint', t.generatesMobile()
-                ? 'Drag to send units. Select first, then drag to set a supply line.'
-                : 'Drag to send units.'));
+            menu.appendChild(el('div', 'tm-hint', t(t.generatesMobile() ? 'menu.hintMobile' : 'menu.hintStatic')));
         } else if (t.owner != null && t.owner !== this.me.id) {
             const p = this.game.players[t.owner];
             const allied = this.me.allies.has(t.owner);
             const pending = p && p.allies.has(this.me.id) && !allied;
             const b = el('button', 'tm-btn' + (allied ? ' danger' : ''),
-                allied ? 'Break alliance' : (pending ? 'Accept alliance' : 'Request alliance'));
+                t(allied ? 'menu.breakAlly' : (pending ? 'menu.acceptAlly' : 'menu.requestAlly')));
             b.addEventListener('click', (ev) => {
                 ev.stopPropagation();
                 this.game.requestAlliance(this.me.id, t.owner);
@@ -3273,7 +4643,7 @@ class App {
             });
             menu.appendChild(b);
         } else {
-            menu.appendChild(el('div', 'tm-hint', t.owner == null ? 'Unowned' : ''));
+            menu.appendChild(el('div', 'tm-hint', t.owner == null ? t('menu.unowned') : ''));
         }
 
         this.positionMenu();
@@ -3286,12 +4656,98 @@ class App {
 
     unitRow(u, count, cap) {
         const row = el('div', 'tm-unit');
-        row.title = LABEL[UNITS[u].name] || UNITS[u].name;
+        row.title = tName('unit', UNITS[u].name);
         const badge = el('span', 'unit-' + UNITS[u].name.toLowerCase());
         row.appendChild(badge);
         row.appendChild(el('span', 'tm-count', `${count}/${cap}`));
         if (TOWER_GEN_HINT[u]) row.appendChild(el('span', 'tm-gen', TOWER_GEN_HINT[u]));
         return row;
+    }
+
+    // ---------------- language ----------------
+    // Every static label, tooltip and placeholder is rewritten from the dictionary. Anything
+    // that is rebuilt per frame or per selection (leaderboard, tower menu, alerts, dialogs)
+    // is redrawn right after so the switch is instant, with no reload.
+    applyLanguage() {
+        const setText = (id, key) => { const e = D(id); if (e) e.textContent = t(key); };
+        const setTitle = (id, key) => { const e = D(id); if (e) e.title = t(key); };
+        const setPh = (id, key) => { const e = D(id); if (e) e.placeholder = t(key); };
+
+        document.title = t('app.title');
+
+        // Top bar.
+        setText('lbl-score', 'hud.score');
+        setText('lbl-towers', 'hud.towers');
+        setText('lbl-life', 'hud.life');
+
+        setPh('chat-input', 'chat.placeholder');
+
+        setTitle('zoom-out', 'zoom.out');
+        setTitle('zoom-in', 'zoom.in');
+        setTitle('center-btn', 'zoom.center');
+
+        setTitle('pause-btn', this.paused ? 'btn.resume' : 'btn.pause');
+        setTitle('speed-btn', 'btn.speed');
+        setTitle('god-btn', 'btn.god');
+        setTitle('fog-btn', 'btn.fogTitle');
+        setText('god-btn', 'btn.god');
+        setText('fog-btn', this.fogEnabled ? 'btn.fog' : 'btn.fogOff');
+        setText('help-btn', 'btn.help');
+        setText('towers-btn', 'btn.towers');
+        setText('units-btn', 'btn.units');
+        setText('newgame-btn', 'btn.newgame');
+
+        setText('spawn-sub', 'spawn.sub');
+        setPh('name-input', 'spawn.name');
+        setText('play-btn', 'spawn.play');
+        setText('dialog-close', 'common.close');
+
+        this.renderLangPicker();
+        this.buildTowerLabels();
+        // Live widgets.
+        this.updateHud();
+        this.renderMenu();
+        this.lastAlertSig = null;
+        this.renderGameAlerts();
+        this.retranslateAlerts();
+        this.renderAlertList();
+        this.showDeath(false);
+        if (this.dialogKind) this.openDialog(this.dialogKind);
+    }
+
+    // The picker in the top-right corner: a <select> keeps native keyboard/AT behaviour and
+    // costs nothing, and each option carries the language's own name so it is findable in
+    // whatever language the player reads.
+    renderLangPicker() {
+        const sel = D('lang-select');
+        if (!sel) return;
+        const cur = langCode();
+        if (!sel.dataset.built) {
+            sel.innerHTML = '';
+            for (const code of langCodes()) {
+                const o = document.createElement('option');
+                o.value = code;
+                o.textContent = metaOf(code).name;
+                sel.appendChild(o);
+            }
+            sel.dataset.built = '1';
+            sel.addEventListener('change', () => this.setLanguage(sel.value));
+        }
+        sel.value = cur || sel.value;
+        sel.title = t('common.language');
+        sel.setAttribute('aria-label', t('common.language'));
+    }
+
+    setLanguage(code) {
+        if (code === langCode()) return;
+        setLang(code);
+        this.applyLanguage();
+    }
+
+    // Tower/unit names are used all over the UI; resolve them once per language change.
+    buildTowerLabels() {
+        for (const tw of TOWERS) tw.label = tName('tower', tw.name);
+        for (const u of UNITS) u.label = tName('unit', u.name);
     }
 
     // ---------------- icon overlay ----------------
@@ -3301,6 +4757,10 @@ class App {
         if (!this.iconLayer) {
             this.iconLayer = D('icons');
             this.iconEls = new Map();
+            // Batch every style write through a single transform-based node move: writing
+            // left/top (and swapping img.src) per tower per frame forces a synchronous
+            // layout on every frame, which is the main source of the stutter.
+            this.iconPool = [];
         }
         const z = this.camera.zoom;
         const { cw, ch } = this.renderer;
@@ -3319,6 +4779,7 @@ class App {
             if (!el) {
                 el = document.createElement('img');
                 el.className = 'tico';
+                el.draggable = false;
                 this.iconLayer.appendChild(el);
                 this.iconEls.set(k, el);
             }
@@ -3328,11 +4789,11 @@ class App {
                 el.src = this.svgUrl(t.type, `rgb(${c.join(',')})`);
                 el.dataset.key = key;
             }
-            el.style.width = size + 'px';
-            el.style.height = size + 'px';
-            el.style.left = (sx - size / 2) + 'px';
-            el.style.top = (sy - size * 0.95) + 'px';
-            el.style.opacity = t.owner == null ? 0.85 : 1;
+            const w = Math.round(size) + 'px';
+            if (el.style.width !== w) { el.style.width = w; el.style.height = w; }
+            const opacity = t.owner == null ? '0.85' : '1';
+            if (el.style.opacity !== opacity) el.style.opacity = opacity;
+            el.style.transform = `translate3d(${(sx - size / 2).toFixed(1)}px,${(sy - size * 0.95).toFixed(1)}px,0)`;
         }
         for (const [k, el] of this.iconEls) {
             if (!seen.has(k)) { el.remove(); this.iconEls.delete(k); }
@@ -3349,27 +4810,43 @@ class App {
     // ---------------- HUD ----------------
     updateHud() {
         const me = this.me;
-        D('score').textContent = fmt(me.score);
-        D('towers-n').textContent = fmt(me.towers.size);
-        const rank = document.querySelectorAll('#leaderboard .lb-row');
+        const score = fmt(me.score);
+        const towers = fmt(me.towers.size);
+        if (this._hudScore !== score) { this._hudScore = score; D('score').textContent = score; }
+        if (this._hudTowers !== towers) { this._hudTowers = towers; D('towers-n').textContent = towers; }
+
+        // The leaderboard is rebuilt only when its *content* changes. Rewriting its innerHTML
+        // every frame (60x/s) forced a full style recalc + layout each time — the single most
+        // expensive thing the UI did, and the main source of the visible hitch.
         const rows = this.game.players
             .filter((p) => p.alive || p.id === me.id)
             .map((p) => ({ p, score: p.id === me.id ? me.score : p.score, n: p.towers.size }))
             .sort((a, b) => b.score - a.score || b.n - a.n)
             .slice(0, 10);
-        const lb = D('leaderboard');
-        let html = '<div class="lb-head">Leaderboard</div>';
-        rows.forEach((r, i) => {
-            const mine = r.p.id === me.id;
-            const col = this.colorCss(r.p.id);
-            html += `<div class="lb-row${mine ? ' me' : ''}"><span class="lb-n">${i + 1}.</span>` +
-                `<span class="lb-dot" style="background:${col}"></span>` +
-                `<span class="lb-name">${escapeHtml(r.p.name)}</span>` +
-                `<span class="lb-score">${r.score}</span></div>`;
-        });
-        html += `<div class="lb-foot">${fmt(this.game.towers.size)} towers · ${this.game.players.filter((p) => p.alive).length} players</div>`;
-        lb.innerHTML = html;
-        D('alive-dot').style.background = me.alive ? '#74b9ff' : '#c0392b';
+        const aliveCount = this.game.players.filter((p) => p.alive).length;
+        const sig = rows.map((r) => `${r.p.id}:${r.p.name}:${r.score}`).join('|') +
+            `#${this.game.towers.size}#${aliveCount}#${t('hud.leaderboard')}#${t('hud.footer')}`;
+        if (sig !== this._lbSig) {
+            this._lbSig = sig;
+            const lb = D('leaderboard');
+            let html = `<div class="lb-head">${t('hud.leaderboard')}</div>`;
+            rows.forEach((r, i) => {
+                const mine = r.p.id === me.id;
+                const col = this.colorCss(r.p.id);
+                html += `<div class="lb-row${mine ? ' me' : ''}"><span class="lb-n">${i + 1}.</span>` +
+                    `<span class="lb-dot" style="background:${col}"></span>` +
+                    `<span class="lb-name">${escapeHtml(r.p.name)}</span>` +
+                    `<span class="lb-score">${r.score}</span></div>`;
+            });
+            html += `<div class="lb-foot">${t('hud.footer', {
+                towers: fmt(this.game.towers.size),
+                players: aliveCount,
+            })}</div>`;
+            lb.innerHTML = html;
+        }
+
+        const alive = me.alive ? '#74b9ff' : '#c0392b';
+        if (this._hudAlive !== alive) { this._hudAlive = alive; D('alive-dot').style.background = alive; }
     }
 
     colorCss(owner) {
@@ -3394,7 +4871,7 @@ class App {
                 : this.visibility.near(pos[0], pos[1], this.game);
         if (pos && visible) this.effects.onEvent(e, pos);
         if (e.type === 'ruler' && e.player === this.me.id) {
-            this.alerts.unshift({ text: 'Your King was killed!', sub: '', kind: 'bad', until: performance.now() + 8000 });
+            this.alerts.unshift({ text: t('alert.kingDead'), sub: '', kind: 'bad', until: performance.now() + 8000 });
         }
         if (e.type === 'died' && e.player === this.me.id) {
             this.showDeath(true);
@@ -3403,11 +4880,22 @@ class App {
 
     renderAlerts() { /* alerts are pushed in pushAlert */ }
 
+    // Toasts are queued as translation *keys* (or literal text for engine errors) so that a
+    // language switch can re-render the ones still on screen in the new language.
     pushAlert(text, sub, kind = 'info', ms = 7000) {
         this.alerts = this.alerts || [];
-        if (this.alerts.some((a) => a.text === text)) return;
-        this.alerts.unshift({ text, sub, kind, until: performance.now() + ms });
+        const key = isTranslatableKey(text) ? text : null;
+        const shown = key ? t(key) : text;
+        if (this.alerts.some((a) => a.text === shown)) return;
+        this.alerts.unshift({ key, text: shown, sub, kind, until: performance.now() + ms });
         this.renderAlertList();
+    }
+
+    // Re-resolve every queued toast; called when the language changes.
+    retranslateAlerts() {
+        for (const a of (this.alerts || [])) {
+            if (a.key) a.text = t(a.key);
+        }
     }
 
     // The Kiomet-style alert column (King safety, tutorial, full/overflow, zombies).
@@ -3426,13 +4914,13 @@ class App {
             txt.appendChild(el('div', 'galert-sub', a.hint));
             row.appendChild(txt);
             if (a.tower) {
-                row.title = 'Click to jump';
+                row.title = t('toast.menuHint');
                 row.addEventListener('click', () => {
                     const t = this.game.getTower(a.tower);
                     if (t) { this.centreOn(t); this.selected = { x: t.x, y: t.y }; this.renderMenu(); }
                 });
             }
-            const x = el('span', 'galert-x', '✘');
+            const x = el('span', 'galert-x', CLOSE_GLYPH);
             x.addEventListener('click', (ev) => {
                 ev.stopPropagation();
                 this.alertBoard.dismiss(a.kind);
@@ -3456,7 +4944,7 @@ class App {
             txt.appendChild(el('div', 'alert-main', escapeHtml(a.text)));
             if (a.sub) txt.appendChild(el('div', 'alert-sub', escapeHtml(a.sub)));
             row.appendChild(txt);
-            const x = el('span', 'alert-x', '✘');
+            const x = el('span', 'alert-x', CLOSE_GLYPH);
             x.addEventListener('click', () => { a.until = 0; this.renderAlertList(); });
             row.appendChild(x);
             box.appendChild(row);
@@ -3467,10 +4955,12 @@ class App {
     deathText() {
         const p = this.game.players[this.me.id];
         const r = p && p.deathReason;
-        if (!r) return 'Your King was killed!';
-        const who = r.killer == null ? 'zombies' : `${this.game.players[r.killer] ? this.game.players[r.killer].name : 'someone'}'s`;
-        const what = r.unit == null ? '' : ` ${UNITS[r.unit].name}`;
-        return `King killed by ${who}${what}!`;
+        if (!r) return t('death.default');
+        if (r.killer == null) return t('death.byZombies');
+        const killer = this.game.players[r.killer];
+        const who = killer ? killer.name : t('death.someone');
+        if (r.unit == null) return t('death.byPlayerNoUnit', { player: who });
+        return t('death.byPlayer', { player: who, unit: tName('unit', UNITS[r.unit].name) });
     }
 
     showDeath(anim) {
@@ -3503,19 +4993,16 @@ class App {
         D('pause-btn').addEventListener('click', () => this.togglePause());
         D('speed-btn').addEventListener('click', () => {
             this.speed = this.speed === 1 ? 2 : this.speed === 2 ? 4 : 1;
-            D('speed-btn').textContent = this.speed + '×';
+            D('speed-btn').textContent = this.speed + '脳';
             D('speed-btn').classList.toggle('active', this.speed !== 1);
         });
         D('god-btn').addEventListener('click', () => {
             this.godMode = !this.godMode;
             localStorage.setItem('kiomet-god', this.godMode ? '1' : '0');
             D('god-btn').classList.toggle('active', this.godMode);
-        D('fog-btn').textContent = this.fogEnabled ? '迷雾:开' : '迷雾:关';
-        D('fog-btn').addEventListener('click', () => this.toggleFog());
-            this.toast(this.godMode ? 'God mode on — your King cannot die' : 'God mode off');
+            this.toast(this.godMode ? 'toast.godOn' : 'toast.godOff');
         });
         D('god-btn').classList.toggle('active', this.godMode);
-        D('fog-btn').textContent = this.fogEnabled ? '迷雾:开' : '迷雾:关';
         D('fog-btn').addEventListener('click', () => this.toggleFog());
         D('help-btn').addEventListener('click', () => this.openDialog('help'));
         D('towers-btn').addEventListener('click', () => this.openDialog('towers'));
@@ -3527,24 +5014,27 @@ class App {
         D('center-btn').addEventListener('click', () => this.panToKey(this.me.rulerKey));
         D('name-input').value = this.name;
         setInterval(() => this.renderAlertList(), 500);
-        this.toast('Click a tower for its menu · drag from your towers to send units · H finds your King');
+        this.toast('toast.intro');
     }
 
     toggleFog() {
         this.fogEnabled = !this.fogEnabled;
         localStorage.setItem('kiomet-fog', this.fogEnabled ? '1' : '0');
         const btn = D('fog-btn');
-        if (btn) btn.textContent = this.fogEnabled ? '迷雾:开' : '迷雾:关';
+        if (btn) btn.textContent = t(this.fogEnabled ? 'btn.fog' : 'btn.fogOff');
         this.visibility.invalidate();
         this.updateVisibility();
     }
 
     togglePause() {
         this.paused = !this.paused;
-        D('pause-btn').textContent = this.paused ? '▶' : '❚❚';
-        D('pause-btn').classList.toggle('active', this.paused);
+        const btn = D('pause-btn');
+        btn.textContent = this.paused ? '▶' : '❚❚';
+        btn.title = t(this.paused ? 'btn.resume' : 'btn.pause');
+        btn.classList.toggle('active', this.paused);
     }
 
+    // `text` may be a translation key or an already-formatted string (engine errors).
     toast(text) {
         this.pushAlert(text, '', 'info', 6000);
     }
@@ -3562,19 +5052,25 @@ class App {
         const dlg = D('dialog');
         const body = D('dialog-body');
         dlg.classList.remove('hidden');
+        // Remembered so a language switch can redraw the open panel in the new language.
+        this.dialogKind = which;
+        const title = D('dialog-title');
         if (which === 'help') {
-            D('dialog-title').textContent = 'Help';
-            body.innerHTML = HELP_HTML;
+            title.textContent = t('help.title');
+            body.innerHTML = t('help.body');
         } else if (which === 'towers') {
-            D('dialog-title').textContent = 'Towers';
+            title.textContent = t('towers.title');
             body.innerHTML = towersHtml();
         } else {
-            D('dialog-title').textContent = 'Units';
+            title.textContent = t('units.title');
             body.innerHTML = unitsHtml();
         }
     }
 
-    closeDialog() { D('dialog').classList.add('hidden'); }
+    closeDialog() {
+        this.dialogKind = null;
+        D('dialog').classList.add('hidden');
+    }
 }
 
 function c2(t, u) { return t.units.get(u) > 0; }
@@ -3584,23 +5080,33 @@ const TOWER_GEN_HINT = {};
 // Tower reference, worded like the real /towers page: "Upgrades from X (in 20s), requires 2 Factory",
 // "Can contain 12 Soldier, 2 Tank, 10 Shield", "Generates Soldier (every 6s), worth 1 point".
 function towersHtml() {
-    const icon = (n) => `<img class="ref-ico" src="${svgRef(n)}" alt="${n}">`;
-    const unitRef = (n) => `<span class="ref-unit"><b>${n}</b></span>`;
-    let out = '<p class="ref-lead">The 27 towers. Solid lines are upgrades, dashed lines are prerequisites.</p>';
+    const icon = (n) => `<img class="ref-ico" src="${svgRef(n)}" alt="${escapeHtml(tName('tower', n))}">`;
+    const unitRef = (n) => `<span class="ref-unit"><b>${escapeHtml(tName('unit', n))}</b></span>`;
+    let out = `<p class="ref-lead">${t('towers.lead')}</p>`;
     out += '<div class="ref-grid">';
-    for (const t of TOWERS) {
-        const up = t.down ? `<p>Upgrades from ${icon(t.down)} <b>${t.down}</b> (in ${t.delay}s)` +
-            (t.prereqs.length ? ', requires ' + t.prereqs.map(([p2, n]) => `${n}${icon(p2)}`).join(', ') : '') + '.</p>'
-            : '<p class="ref-dim">Found on the map.</p>';
-        const cap = Object.entries(t.cap).map(([u, c]) => `${c} ${unitRef(u)}`).join(', ');
-        const gen = Object.entries(t.gen).map(([u, sec]) => `${unitRef(u)} (every ${sec}s)`).join(', ');
+    for (const tw of TOWERS) {
+        const reqs = tw.prereqs.map(([p2, n]) => `${n}${icon(p2)}`).join(', ');
+        const up = tw.down
+            ? `<p>${t(reqs ? 'towers.upgradesFromReq' : 'towers.upgradesFrom', {
+                icon: icon(tw.down),
+                tower: tName('tower', tw.down),
+                seconds: tw.delay,
+                reqs,
+            })}.</p>`
+            : `<p class="ref-dim">${t('towers.foundOnMap')}</p>`;
+        const cap = Object.entries(tw.cap).map(([u, c]) => `${c} ${unitRef(u)}`).join(', ');
+        const gen = Object.entries(tw.gen)
+            .map(([u, sec]) => t('towers.generatesEvery', { unit: unitRef(u), seconds: sec }))
+            .join(', ');
+        // Chinese-style languages end the clause with a full stop; the template owns the
+        // punctuation so translations can place it correctly.
         out += `<div class="ref-card">
-            <h3>${icon(t.name)} ${LABEL[t.name] || t.name}</h3>
+            <h3>${icon(tw.name)} ${escapeHtml(tName('tower', tw.name))}</h3>
             ${up}
-            <p>Can contain ${cap}.</p>
-            <p>Generates ${gen || 'nothing'}, worth ${t.score} point${t.score === 1 ? '' : 's'}.</p>
-            ${t.sensor > 12 ? `<p>Has a ${Math.round(100 * (t.sensor - 12) / 12)}% higher visual range.</p>` : ''}
-            ${t.name === 'Projector' ? '<p>Can send Shields along roads.</p>' : ''}
+            <p>${t('towers.canContain', { units: cap })}</p>
+            <p>${t('towers.generates', { units: gen || t('towers.generatesNothing') })}${t('towers.worth', { points: tw.score })}</p>
+            ${tw.sensor > 12 ? `<p>${t('towers.sensor', { percent: Math.round(100 * (tw.sensor - 12) / 12) })}</p>` : ''}
+            ${tw.name === 'Projector' ? `<p>${t('towers.projector')}</p>` : ''}
         </div>`;
     }
     return out + '</div>';
@@ -3609,29 +5115,29 @@ function towersHtml() {
 // Unit reference, worded like the real /units page (damage vs surface/air, speed, range,
 // chopper weight, EMP duration, overflow allowance, which towers make it).
 function unitsHtml() {
-    const icon = (n) => `<img class="ref-ico" src="${svgRef(n)}" alt="${n}">`;
-    let out = '<p class="ref-lead">The 10 units. They generally fight in the order listed — ' +
-        'shield always absorbs damage first.</p><div class="ref-grid">';
-    const SPEED = { slow: 'Travels at a slow speed.', normal: 'Travels at a moderate speed.', fast: 'Travels at a fast speed.', shield: 'Is immobile.' };
-    const RANGE = { short: 'Has a short range.', medium: 'Has a medium range.', long: 'Has a long range.' };
+    const icon = (n) => `<img class="ref-ico" src="${svgRef(n)}" alt="${escapeHtml(tName('tower', n))}">`;
+    let out = `<p class="ref-lead">${t('units.lead')}</p><div class="ref-grid">`;
     for (let u = 0; u < UNITS.length; u++) {
         const d = UNITS[u];
-        const makers = TOWERS.filter((t) => t.gen[d.name]).map((t) => icon(t.name)).join(' ');
+        const makers = TOWERS.filter((tw) => tw.gen[d.name]).map((tw) => icon(tw.name)).join(' ');
         const surface = Math.max(damageOf(u, 0, 0), damageOf(u, 1, 0));
         const air = Math.max(damageOf(u, 0, 1), damageOf(u, 1, 1));
-        let dmg = surface === air ? `Does ${surface >= 31 ? 'infinite' : surface} damage.`
-            : `Does ${surface >= 31 ? 'infinite' : surface} damage against surface, ${air} damage against air.`;
+        const fmtDmg = (n) => (n >= 31 ? t('units.infinite') : n);
+        const dmg = surface === air
+            ? t('units.damage', { surface: fmtDmg(surface) })
+            : t('units.damageBoth', { surface: fmtDmg(surface), air: fmtDmg(air) });
+        const speedText = d.name === 'Shield' ? t('units.shieldSpecial') : t(`units.speed.${d.speed}`);
         out += `<div class="ref-card">
-            <h3>${icon(d.name)} ${LABEL[d.name] || d.name}</h3>
-            ${makers ? `<p>Produced by ${makers}.</p>` : ''}
+            <h3>${icon(d.name)} ${escapeHtml(tName('unit', d.name))}</h3>
+            ${makers ? `<p>${t('units.producedBy', { makers })}</p>` : ''}
             <p>${dmg}</p>
-            <p>${d.name === 'Shield' ? 'Immobile unless sent from a Projector, in which case it travels fast.' : SPEED[d.speed] || ''}</p>
-            ${d.range ? `<p>${RANGE[d.range]}</p>` : ''}
-            ${d.weight ? `<p>Has weight of ${d.weight} for Choppers.</p>` : ''}
-            ${d.name === 'Chopper' ? '<p>Can carry other units (weight of 4).</p>' : ''}
-            ${d.name === 'Emp' ? '<p>Disables a tower for 60s.</p>' : ''}
-            ${d.maxOverflow ? `<p>Up to ${d.maxOverflow} can temporarily overflow a tower.</p>` : ''}
-            ${d.name === 'King' ? `<p>Boosts shield capacity by ${RULER_SHIELD_BOOST}. If it dies, you lose the game.</p>` : ''}
+            <p>${speedText}</p>
+            ${d.range ? `<p>${t(`units.range.${d.range}`)}</p>` : ''}
+            ${d.weight ? `<p>${t('units.weight', { weight: d.weight })}</p>` : ''}
+            ${d.name === 'Chopper' ? `<p>${t('units.chopper')}</p>` : ''}
+            ${d.name === 'Emp' ? `<p>${t('units.emp')}</p>` : ''}
+            ${d.maxOverflow ? `<p>${t('units.overflow', { count: d.maxOverflow })}</p>` : ''}
+            ${d.name === 'King' ? `<p>${t('units.king', { boost: RULER_SHIELD_BOOST })}</p>` : ''}
         </div>`;
     }
     return out + '</div>';
@@ -3657,30 +5163,14 @@ function svgRef(name) {
     return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
 }
 
-// Help, condensed from the real client help (client/src/ui/translations/help/en.md).
-const HELP_HTML = `
-<p>Kiomet is a real-time strategy game: expand your territory by sending units to capture towers.</p>
-<h3>How to play</h3>
-<p>Drag units to capture towers. To upgrade a tower, click it and then click an available upgrade.
-Upgrades list their requirements next to them.</p>
-<h3>How to win</h3>
-<p>Earn points by capturing towers and holding them as long as possible. Protect your King —
-losing it costs you the game. A Bunker or Headquarters can survive a few Nukes.</p>
-<h3>Supply lines</h3>
-<p>Towers that make units can send them automatically. Click a tower to open its menu, then drag
-from it as normal; if the path shows moving arrows, you succeeded. Hold <b>R</b> to show all your
-supply lines. Delete one by drawing it again or with <b>Shift+R</b>.</p>
-<h3>Alliances</h3>
-<p>Select a tower of another player and click the handshake button to request or accept an
-alliance. Until it is broken, neither side can attack the other.</p>
-<h3>Keys</h3>
-<p><b>H</b> find your King · <b>Q</b>/<b>E</b> zoom · <b>WASD</b> or arrows to pan ·
-<b>T</b> mark towers of the selected kind · <b>R</b> supply lines · <b>B</b> fog of war ·
-<b>Space</b> pause · <b>Esc</b> close menus.</p>
-`;
-
 function escapeHtml(s) {
     return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+// A string is a translation key when it looks like `section.name` and the dictionary knows
+// it, which keeps engine messages (plain words like "path too long") renderable as-is.
+function isTranslatableKey(s) {
+    return typeof s === 'string' && /^[a-z]+\.[A-Za-z0-9.]+$/.test(s) && t(s) !== s;
 }
 
 window.kiomet = new App();

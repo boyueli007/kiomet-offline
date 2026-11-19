@@ -10,17 +10,13 @@
 // Each one carries a tower so clicking it can jump there.
 
 import { SHIELD, UNITS, isMobile, TOWER } from './data.js';
+import { t } from './i18n.js';
 
-export const ALERT_TEXT = {
-    rulerAttack: ['Your King is under attack!', 'If they die, you lose the game'],
-    rulerUnsafe: ['Move your King to safety',
-        'Shielded Headquarters or Bunkers near the center of your territory provide the most protection'],
-    capture: ['Capture more towers', 'Drag units from your towers to outside your borders'],
-    upgrade: ['Upgrade a tower', 'Click a tower to show upgrade options'],
-    full: ['A tower is full', 'Drag away units to make room for more'],
-    overflow: ['A tower is overflowing', 'Drag away units to stop them from disappearing'],
-    zombies: ['Zombies sighted', 'Escape them by moving in the opposite direction'],
-};
+// Keys, not text: the board is re-evaluated every game second, so the strings are looked up
+// on the fly and a language switch is picked up on the next tick.
+export const ALERT_KINDS = [
+    'rulerAttack', 'rulerUnsafe', 'capture', 'upgrade', 'full', 'overflow', 'zombies',
+];
 
 export class AlertBoard {
     constructor() {
@@ -86,8 +82,7 @@ export class AlertBoard {
     }
 
     item(kind, tower) {
-        const [title, hint] = ALERT_TEXT[kind];
-        return { kind, title, hint, tower };
+        return { kind, title: t(`alert.${kind}.title`), hint: t(`alert.${kind}.hint`), tower };
     }
 
     // "A tower is full / overflowing" + "zombies are attacking this tower".

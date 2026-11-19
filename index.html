@@ -12,15 +12,16 @@
 :root{
   --bg:#2d3436; --panel:#00000033; --panel-solid:#20282a; --text:#e8ecf1;
   --blue:#74b9ff; --red:#c0392b; --purple:#8644fc; --gold:#ffd166;
+  --ui-font:system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft Yahei",sans-serif;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--text);
-  font:14px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft Yahei",sans-serif;
+  font:14px/1.35 var(--ui-font);
   user-select:none;-webkit-user-select:none}
 #app{position:absolute;inset:0;z-index:0}
-#game-alerts,#topbar,#leaderboard,#alerts,#chat,#controls,#zoomctl,#tower-menu,#spawn,#dialog{position:absolute;z-index:2}
-#icons{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:1}
-.tico{position:absolute;will-change:left,top;filter:drop-shadow(0 1px 1px #0008)}
+#game-alerts,#topbar,#leaderboard,#lang-picker,#alerts,#chat,#controls,#zoomctl,#tower-menu,#spawn,#dialog{position:absolute;z-index:2}
+#icons{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:1;contain:strict}
+.tico{position:absolute;left:0;top:0;will-change:transform;filter:drop-shadow(0 1px 1px #0008)}
 #canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;z-index:0}
 .hidden{display:none!important}
 
@@ -41,6 +42,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 .galert-sub{opacity:.7;font-size:.74rem;line-height:1.3}
 .galert-x{margin-left:auto;opacity:.5;padding-left:.4rem}
 .galert-x:hover{opacity:1}
+/* Toast column: bottom-left, above the chat box (the game alerts own the top-left corner). */
 #alerts{top:auto;bottom:11.5rem;max-width:22rem}
 #leaderboard{position:absolute;right:.6rem;top:.6rem;min-width:11rem;max-width:24vw;
   background:var(--panel);border-radius:.4rem;padding:.35rem .5rem;font-size:.8rem;backdrop-filter:blur(2px)}
@@ -160,6 +162,41 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 .tbl th,.tbl td{text-align:left;padding:.25rem .45rem;border-bottom:1px solid #ffffff14;vertical-align:top}
 .tbl th{opacity:.7;font-weight:600;position:sticky;top:0;background:var(--panel-solid)}
 
+/* language picker (top-right, above the leaderboard) */
+#lang-picker{position:absolute;right:.6rem;top:.6rem;display:flex;align-items:center;gap:.25rem;
+  z-index:3;background:var(--panel);border-radius:.4rem;padding:.15rem .3rem;backdrop-filter:blur(2px)}
+.lang-label{font-size:.85rem;opacity:.8;line-height:1}
+#lang-select{background:#00000055;border:1px solid #ffffff26;color:var(--text);border-radius:.3rem;
+  padding:.15rem .25rem;font:inherit;font-size:.78rem;cursor:pointer;outline:none;max-width:8.5rem}
+#lang-select:hover{border-color:var(--blue)}
+#lang-select:focus-visible{border-color:var(--blue);box-shadow:0 0 0 2px #74b9ff44}
+#lang-select option{background:#20282a;color:var(--text)}
+/* the leaderboard sits below the picker so the two never overlap */
+#leaderboard{top:2.75rem}
+
+/* right-to-left (Arabic). Every horizontal offset above is physical, so mirror the
+   containers that anchor to an edge; flex/inline text direction is handled by `dir`. */
+html[dir="rtl"] #lang-picker{right:auto;left:.6rem}
+html[dir="rtl"] #leaderboard{right:auto;left:.6rem;text-align:right}
+/* Alerts swap corners: the game alerts take the right edge, toasts the left. Both rules have
+   the same specificity as the LTR ones, so they must sit after them in the sheet. */
+html[dir="rtl"] #game-alerts{left:auto;right:.6rem}
+html[dir="rtl"] #alerts{left:.6rem;right:auto}
+html[dir="rtl"] #chat{left:auto;right:.6rem}
+html[dir="rtl"] #controls{right:auto;left:.6rem;justify-content:flex-start}
+html[dir="rtl"] #zoomctl{right:auto;left:.6rem}
+html[dir="rtl"] .galert{border-left:none;border-right:3px solid var(--blue)}
+html[dir="rtl"] .galert.rulerAttack,html[dir="rtl"] .galert.rulerUnsafe{border-right-color:var(--red)}
+html[dir="rtl"] .galert.overflow,html[dir="rtl"] .galert.zombies{border-right-color:var(--gold)}
+/* The dismiss button is the leading inline item in RTL; push it to the far edge on the left. */
+html[dir="rtl"] .galert-x{margin-left:auto;margin-right:0;padding-left:0;padding-right:.4rem}
+html[dir="rtl"] .alert-x{margin-left:auto;margin-right:0;padding-left:0;padding-right:.3rem}
+html[dir="rtl"] .tm-owner{margin-left:0;margin-right:auto}
+html[dir="rtl"] .tm-gen{margin-left:0;margin-right:auto}
+html[dir="rtl"] #dialog-close{float:left}
+html[dir="rtl"] .tbl th,html[dir="rtl"] .tbl td{text-align:right}
+html[dir="rtl"] #topbar{direction:rtl}
+
 /* small screens */
 @media (max-width:720px){
   #game-alerts{max-width:70vw;font-size:.74rem}
@@ -168,6 +205,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   #chat-log{max-height:5rem}
   #tower-menu{max-width:13rem;font-size:.76rem}
   #spawn h1{font-size:2rem}
+  #lang-select{font-size:.72rem;max-width:6.5rem}
 }
 </style>
 </head>
@@ -177,14 +215,20 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   <div id="icons"></div>
 
   <div id="topbar">
-    <div class="stat">得分 <b id="score">0</b></div>
-    <div class="stat">塔 <b id="towers-n">0</b></div>
-    <div class="stat">生命 <b id="alive-dot" class="dot"></b></div>
+    <div class="stat"><span id="lbl-score">得分</span> <b id="score">0</b></div>
+    <div class="stat"><span id="lbl-towers">塔</span> <b id="towers-n">0</b></div>
+    <div class="stat"><span id="lbl-life">生命</span> <b id="alive-dot" class="dot"></b></div>
   </div>
 
   <div id="game-alerts"></div>
   <div id="alerts"></div>
   <div id="leaderboard"></div>
+
+  <!-- Language picker: top-right, above the leaderboard. Native <select> for keyboard and AT. -->
+  <div id="lang-picker">
+    <label class="lang-label" for="lang-select">🌐</label>
+    <select id="lang-select" aria-label="Language"></select>
+  </div>
 
   <div id="chat">
     <div id="chat-log"></div>
@@ -214,7 +258,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 
   <div id="spawn" class="hidden">
     <h1>Kiomet<span>.com</span></h1>
-    <p class="sub">实时领地塔防 · 单机复刻</p>
+    <p class="sub" id="spawn-sub">实时领地塔防 · 单机复刻</p>
     <input id="name-input" maxlength="12" placeholder="昵称" autocomplete="off">
     <button id="play-btn">开始</button>
     <div id="death-reason" class="hidden"></div>

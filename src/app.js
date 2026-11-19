@@ -151,9 +151,18 @@ export class App {
         this.effects.cameraAt = [this.camera.x, this.camera.y];
         this.effects.render(this.renderer.ctx, (x, y) => this.camera.toScreen(x, y, this.renderer.cw, this.renderer.ch), this.camera.zoom, dt);
         this.updateHud();
+        this.validateSelection();
         if (this.selected) this.positionMenu();
         this.trackFrameCost(now);
         requestAnimationFrame((t) => this.frame(t));
+    }
+
+    // A selected tower can disappear between frames (captured by an enemy, razed, or the map
+    // regenerated). Checking here once per frame keeps the panel honest without making
+    // positionMenu() mutate state.
+    validateSelection() {
+        if (!this.selected) return;
+        if (!this.game.getTower(this.selected)) this.dismissMenu();
     }
 
     // Adaptive quality: if frames consistently exceed the budget, step the canvas resolution
@@ -178,9 +187,8 @@ export class App {
     }
 
     closeMenuOnPan() {
-        this.selected = null;
         this.lastAlertSig = null;
-        this.renderMenu();
+        this.dismissMenu();
     }
 
     // Fog of war is a player setting (default on, like the real game).
@@ -236,7 +244,10 @@ export class App {
         cv.addEventListener('pointerdown', (e) => {
             this.effects.ensureAudio();
             if (this.effects.audio && this.effects.audio.state === 'suspended') this.effects.audio.resume();
-            cv.setPointerCapture(e.pointerId);
+            // Capture can legitimately fail (the pointer was already released, or a synthetic
+            // event carries an unknown id). Throwing here would abandon the rest of the handler
+            // and leave the tower panel undismissable, so it must never break input.
+            try { cv.setPointerCapture(e.pointerId); } catch { /* capture is an optimisation */ }
             this.pointers = this.pointers || new Map();
             const [lx, ly] = this.renderer.eventToLocal(e);
             this.pointers.set(e.pointerId, { x: lx, y: ly });
@@ -256,6 +267,11 @@ export class App {
             this.dragPath = null;
             if (t && t.owner === this.me.id) {
                 this.drag = { from: t, startX: lx, startY: ly, path: null, moved: false };
+            } else {
+                // Clicking empty ground (or someone else's tower) dismisses the menu. Without
+                // this the panel could only be closed by clicking the very same tower again,
+                // and if that tower's id changed under you the panel became impossible to close.
+                this.dismissMenu();
             }
         });
 
@@ -290,7 +306,9 @@ export class App {
         cv.addEventListener('pointerup', end);
         cv.addEventListener('pointercancel', end);
         cv.addEventListener('lostpointercapture', end);
-        addEventListener('pointerup', (e) => { if (this.drag) end(e); });
+        // Window-level fallback only for pointers that left the canvas mid-drag. Guarding on
+        // the target keeps a click on a menu button from being re-routed into finishDrag().
+        addEventListener('pointerup', (e) => { if (this.drag && e.target === cv) end(e); });
 
         cv.addEventListener('wheel', (e) => {
             e.preventDefault();
@@ -311,7 +329,7 @@ export class App {
         addEventListener('keydown', (e) => {
             const k = e.key.toLowerCase();
             this.keys.add(k);
-            if (k === 'escape') { this.selected = null; this.renderMenu(); this.closeDialog(); }
+            if (k === 'escape') { this.dismissMenu(); this.closeDialog(); }
             if (k === 'h') {
                 const t = this.me.rulerKey != null ? this.game.towers.get(this.me.rulerKey) : null;
                 if (t) { const p = integerPosition(t.x, t.y); this.panTarget = { x: p[0], y: p[1] }; }
@@ -432,7 +450,11 @@ export class App {
     }
 
     selectTower(t) {
-        if (this.selected && this.selected.x === t.x && this.selected.y === t.y) {
+        // Toggle only against a *live* tower. The old check compared coordinates, so once the
+        // selected tower was captured/destroyed its lookup returned null and renderMenu() kept
+        // the stale panel on screen with no way to dismiss it.
+        const sel = this.selected ? this.game.getTower(this.selected) : null;
+        if (sel && t && sel.x === t.x && sel.y === t.y) {
             this.selected = null;
         } else {
             this.selected = { x: t.x, y: t.y };
@@ -440,11 +462,22 @@ export class App {
         this.renderMenu();
     }
 
+    // Single exit path for closing the tower panel, so no caller can leave a hidden-but-stale
+    // selection behind.
+    dismissMenu() {
+        if (!this.selected) return;
+        this.selected = null;
+        this.renderMenu();
+    }
+
     // ---------------- menu ----------------
     positionMenu() {
         const menu = D('tower-menu');
-        const t = this.game.getTower(this.selected);
-        if (!t) { this.selected = null; menu.classList.add('hidden'); return; }
+        const t = this.selected ? this.game.getTower(this.selected) : null;
+        // Do NOT null the selection here: positionMenu() runs every frame, and clearing the
+        // selection from inside it means a tower that vanishes (captured, destroyed, or
+        // replaced) silently strands the panel. renderMenu() owns the hide.
+        if (!t) { menu.classList.add('hidden'); return; }
         const p = integerPosition(t.x, t.y);
         const [sx, sy] = this.camera.toScreen(p[0], p[1], this.renderer.cw, this.renderer.ch);
         const w = menu.offsetWidth || 200, h = menu.offsetHeight || 120;
@@ -458,44 +491,61 @@ export class App {
     renderMenu() {
         const menu = D('tower-menu');
         menu.innerHTML = '';
-        const t = this.selected ? this.game.getTower(this.selected) : null;
-        if (!t) { menu.classList.add('hidden'); return; }
+        // Named `tower`, not `t`: `t` is the translation function and must stay callable here.
+        const tower = this.selected ? this.game.getTower(this.selected) : null;
+        if (!tower) {
+            // The selected tower is gone (captured, razed, or the map regenerated): drop the
+            // stale selection so the next frame doesn't try to reposition a phantom panel.
+            this.selected = null;
+            menu.classList.add('hidden');
+            return;
+        }
         menu.classList.remove('hidden');
 
-        const isMine = t.owner === this.me.id;
-        const type = TOWER[t.type];
+        // Explicit close button: mouse users can always dismiss the panel without hunting for
+        // the same tower again, and touch users get a target that isn't a 3px tap radius.
+        const close = el('button', 'tm-close', '✕');
+        close.type = 'button';
+        close.title = t('common.close');
+        close.setAttribute('aria-label', t('common.close'));
+        close.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+        close.addEventListener('click', (ev) => { ev.stopPropagation(); this.dismissMenu(); });
+        menu.appendChild(close);
+
+        const isMine = tower.owner === this.me.id;
+        const type = TOWER[tower.type];
         const head = el('div', 'tm-head');
         head.appendChild(el('img', 'tm-icon', ''));
-        head.querySelector('img').src = this.svgUrl(t.type, 'rgb(116,185,255)');
-        head.appendChild(el('span', 'tm-title', tName('tower', t.type)));
-        if (t.owner != null) {
-            const p = this.game.players[t.owner];
+        head.querySelector('img').src = this.svgUrl(tower.type, 'rgb(116,185,255)');
+        head.appendChild(el('span', 'tm-title', tName('tower', tower.type)));
+        if (tower.owner != null) {
+            const p = this.game.players[tower.owner];
             head.appendChild(el('span', 'tm-owner', p ? p.name : ''));
         }
         menu.appendChild(head);
 
-        if (t.delay > 0) {
-            menu.appendChild(el('div', 'tm-delay', t('menu.upgrading', { seconds: Math.ceil(t.delay / TICK_HZ) })));
+        if (tower.delay > 0) {
+            menu.appendChild(el('div', 'tm-delay', t('menu.upgrading', { seconds: Math.ceil(tower.delay / TICK_HZ) })));
         }
 
         // Unit rows (only what the tower can make, or already holds).
         const rows = el('div', 'tm-units');
-        for (const [u, c] of t.units.counts()) {
-            const cap = t.units.capacity(u, t.type);
+        for (const [u, c] of tower.units.counts()) {
+            const cap = tower.units.capacity(u, tower.type);
             rows.appendChild(this.unitRow(u, c, cap));
         }
         for (const name of Object.keys(type.gen)) {
             const u = UNIT_ID[name];
-            if (c2(t, u)) continue;
-            rows.appendChild(this.unitRow(u, 0, t.units.capacity(u, t.type)));
+            if (c2(tower, u)) continue;
+            rows.appendChild(this.unitRow(u, 0, tower.units.capacity(u, tower.type)));
         }
-        if (t.units.hasRuler()) rows.appendChild(this.unitRow(RULER, 1, 1));
+        if (tower.units.hasRuler()) rows.appendChild(this.unitRow(RULER, 1, 1));
         menu.appendChild(rows);
 
-        if (isMine && t.active) {
+        if (isMine && tower.active) {
             const ups = el('div', 'tm-ups');
-            const opts = [...TOWER[t.type].upgrades];
-            if (type.basis !== t.type) opts.push(type.basis);
+            const opts = [...TOWER[tower.type].upgrades];
+            if (type.basis !== tower.type) opts.push(type.basis);
             for (const name of opts) {
                 const up = TOWER[name];
                 const down = name === type.basis;
@@ -521,7 +571,7 @@ export class App {
                 row.addEventListener('click', (ev) => {
                     ev.stopPropagation();
                     if (!ok) { this.toast('toast.prereq'); return; }
-                    const err = this.game.upgradeTower(this.me.id, t.id, name);
+                    const err = this.game.upgradeTower(this.me.id, tower.id, name);
                     if (err) this.toast(err);
                     else { this.alertBoard.onUpgrade(); this.renderMenu(); }
                 });
@@ -529,29 +579,29 @@ export class App {
             }
             menu.appendChild(ups);
 
-            if (t.supply) {
+            if (tower.supply) {
                 const b = el('button', 'tm-btn', t('menu.cancelSupply'));
                 b.addEventListener('click', () => {
-                    this.game.setSupplyLine(this.me.id, t.id, null);
+                    this.game.setSupplyLine(this.me.id, tower.id, null);
                     this.renderMenu();
                 });
                 menu.appendChild(b);
             }
-            menu.appendChild(el('div', 'tm-hint', t(t.generatesMobile() ? 'menu.hintMobile' : 'menu.hintStatic')));
-        } else if (t.owner != null && t.owner !== this.me.id) {
-            const p = this.game.players[t.owner];
-            const allied = this.me.allies.has(t.owner);
+            menu.appendChild(el('div', 'tm-hint', t(tower.generatesMobile() ? 'menu.hintMobile' : 'menu.hintStatic')));
+        } else if (tower.owner != null && tower.owner !== this.me.id) {
+            const p = this.game.players[tower.owner];
+            const allied = this.me.allies.has(tower.owner);
             const pending = p && p.allies.has(this.me.id) && !allied;
             const b = el('button', 'tm-btn' + (allied ? ' danger' : ''),
                 t(allied ? 'menu.breakAlly' : (pending ? 'menu.acceptAlly' : 'menu.requestAlly')));
             b.addEventListener('click', (ev) => {
                 ev.stopPropagation();
-                this.game.requestAlliance(this.me.id, t.owner);
+                this.game.requestAlliance(this.me.id, tower.owner);
                 this.renderMenu();
             });
             menu.appendChild(b);
         } else {
-            menu.appendChild(el('div', 'tm-hint', t.owner == null ? t('menu.unowned') : ''));
+            menu.appendChild(el('div', 'tm-hint', tower.owner == null ? t('menu.unowned') : ''));
         }
 
         this.positionMenu();

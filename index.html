@@ -90,7 +90,17 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 #tower-menu{position:absolute;z-index:20;min-width:11rem;max-width:16rem;background:#0f1416e6;
   border:1px solid #ffffff26;border-radius:.45rem;padding:.5rem;font-size:.8rem;backdrop-filter:blur(3px);
   box-shadow:0 6px 24px #0006}
-.tm-head{display:flex;align-items:center;gap:.35rem;margin-bottom:.35rem}
+/* Close button sits in the corner; the panel is dismissed by it, by clicking empty ground,
+   or by Esc — never only by re-clicking the same tower. */
+.tm-close{position:absolute;top:-.35rem;right:-.35rem;width:1.35rem;height:1.35rem;display:flex;
+  align-items:center;justify-content:center;padding:0;border-radius:50%;cursor:pointer;
+  background:#20282a;border:1px solid #ffffff33;color:#cfd8e3;font-size:.8rem;line-height:1;
+  z-index:1;transition:background .12s,color .12s,border-color .12s}
+.tm-close:hover{background:#c0392b;border-color:#c0392b;color:#fff}
+.tm-close:focus-visible{outline:none;box-shadow:0 0 0 2px #74b9ff88}
+html[dir="rtl"] .tm-close{right:auto;left:-.35rem}
+.tm-head{display:flex;align-items:center;gap:.35rem;margin-bottom:.35rem;padding-right:.6rem}
+html[dir="rtl"] .tm-head{padding-right:0;padding-left:.6rem}
 .tm-icon{width:1.55rem;height:1.55rem;object-fit:contain}
 .tm-title{font-weight:700;font-size:.95rem}
 .tm-owner{margin-left:auto;opacity:.7;font-size:.75rem}

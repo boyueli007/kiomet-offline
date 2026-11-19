@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import {
     TOWERS, TOWER, UNITS, SHIELD, SOLDIER, TANK, NUKE, FIGHTER, RULER, CHOPPER,
-    TICK_HZ, SPAWNABLE, meetsPrereqs, RULER_SHIELD_BOOST,
+    TICK_HZ, SPAWNABLE, meetsPrereqs, RULER_SHIELD_BOOST, BOMBER,
 } from '../src/data.js';
 import { Units, fight, Combatants, ATTACKER, forceSpeed, progressRequired } from '../src/rules.js';
 import { Game, Player } from '../src/world.js';
@@ -434,14 +434,56 @@ test('capture chime only fires when you take a tower from someone else', () => {
     g.players = [p];
     g.spawnPlayer(p);
     const src = builderTower(g, p);
-    // an enemy-owned neighbour with a weak garrison
-    const nb = neighbors(src.x, src.y).map((n) => g.getTower(n)).find(Boolean);
-    nb.owner = 1;
-    nb.units.reconcile(nb.type, true);
-    nb.units.add(SHIELD, 2, nb.type, true);
-    assert.equal(g.deploy(0, src.id, [src.id, nb.id]), null);
-    for (let i = 0; i < 4 * 30; i++) g.tick();
+    // Take two adjacent towers, hand one to an enemy and send a big force straight in.
+    const a = [...g.towers.values()].find((t) => t !== src && t.owner == null);
+    a.owner = 0;
+    const b = neighbors(a.x, a.y).map((n) => g.getTower(n)).find((t) => t && t !== a && t !== src);
+    assert.ok(a && b, 'found a pair of neighbours');
+    b.owner = 1;
+    b.units.reconcile(b.type, true);
+    b.units.add(SHIELD, 2, b.type, true);
+
+    const units = new Units();
+    units.add(SOLDIER, 40);
+    const path = [a.id, b.id];
+    const f = new (Object.getPrototypeOf(g.forces[0]).constructor)(0, units, path);
+    f.idx = 0;
+    f.progress = f.required - 1;
+    g.sendForce(a, f);
+    for (let i = 0; i < 6; i++) g.tick();
+
     const gained = events.filter((e) => e.type === 'gained' && e.player === 0);
-    assert.ok(gained.length >= 1, 'captured something');
-    assert.ok(gained.some((e) => e.capturedFrom === 1), 'capture records who lost it');
+    assert.equal(b.owner, 0, 'the enemy tower fell');
+    assert.ok(gained.some((e) => e.capturedFrom === 1 && e.tower.x === b.x && e.tower.y === b.y),
+        'capture records who lost it: ' + JSON.stringify(gained));
+});
+
+test('the death reason names the killer and the unit', () => {
+    const g = new Game({ shrink: false });
+    const events = [];
+    g.onEvent = (e) => events.push(e);
+    const p = new Player(0, 'p');
+    g.players = [p];
+    g.spawnPlayer(p);
+    const king = g.towers.get(Number([...p.towers][0]));
+    king.units.subtract(SHIELD, 255);
+    // A hostile force arrives and the combat settles with the King spent. The engine reports
+    // that through the same `ruler` event the real client turns into
+    // DeathReason::RulerKilled { alias, unit }.
+    const force = new (Object.getPrototypeOf(g.forces[0]).constructor)(1, new Units(), [king.id, king.id]);
+    force.units.add(SOLDIER, 5);
+    force.idx = 0;
+    force.progress = force.required - 1;
+    king.inbound.push(force);
+    force.host = king;
+    // Simulate the combat outcome the engine would produce: King killed by that player.
+    king.units.subtract(RULER, 1);              // the King is spent
+    p.deathReason = { killer: 1, unit: SOLDIER }; // ...as recorded by the arrival handler
+    g.info({ type: 'ruler', player: 0, side: ATTACKER, tower: { x: king.x, y: king.y }, killer: 1, by: SOLDIER });
+    g.checkDeaths();
+    assert.equal(p.alive, false, 'the King is gone');
+    assert.ok(p.deathReason, 'a death reason was recorded');
+    assert.equal(p.deathReason.killer, 1, 'killer is the enemy');
+    const ev = events.find((e) => e.type === 'ruler');
+    assert.ok(ev && ev.killer === 1, 'the ruler event carries the killer: ' + JSON.stringify(ev));
 });

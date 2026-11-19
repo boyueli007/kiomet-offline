@@ -5,13 +5,13 @@
 
 import {
     UNITS, UNIT_ID, TOWER, TOWERS, TICK_HZ, SHIELD, RULER, SPAWNABLE,
-    meetsPrereqs, isMobile,
+    meetsPrereqs, isMobile, RULER_SHIELD_BOOST,
 } from './data.js';
 import { integerPosition, neighbors, distance } from './geom.js';
 import { Units } from './rules.js';
 import { Game, Player } from './world.js';
 import { botUpdate } from './bot.js';
-import { TOWER_SVG } from './glyphs.js';
+import { TOWER_SVG, UNIT_SVG } from './glyphs.js';
 import { Visibility } from './fog.js';
 import { Effects } from './effects.js';
 import { AlertBoard } from './alerts.js';
@@ -130,6 +130,7 @@ export class App {
             dragPath: this.dragPath,
             dragValid: this.dragValid,
             markType: this.markType(),
+            showSupplyLines: this.showSupplyLines,
             fog: (t) => this.isVisible(t),
         });
         // Once per game second (and once right after any pause), same cadence as the server.
@@ -143,6 +144,12 @@ export class App {
         this.updateHud();
         if (this.selected) this.positionMenu();
         requestAnimationFrame((t) => this.frame(t));
+    }
+
+    closeMenuOnPan() {
+        this.selected = null;
+        this.lastAlertSig = null;
+        this.renderMenu();
     }
 
     // Fog of war is a player setting (default on, like the real game).
@@ -173,7 +180,20 @@ export class App {
         if (this.keys.has('w') || this.keys.has('arrowup')) dy -= sp;
         if (this.keys.has('s') || this.keys.has('arrowdown')) dy += sp;
         if (dx || dy) {
-            this.camera.x += dx; this.camera.y += dy; this.camera.clamp();
+            this.camera.x += dx; this.camera.y += dy;
+            this.panTarget = null;
+            this.camera.clamp();
+            if (this.selected) this.closeMenuOnPan();
+        }
+        // A queued "find my King" glides the camera instead of teleporting.
+        if (this.panTarget) {
+            const k = Math.min(1, dt * 8);
+            this.camera.x += (this.panTarget.x - this.camera.x) * k;
+            this.camera.y += (this.panTarget.y - this.camera.y) * k;
+            if (Math.hypot(this.panTarget.x - this.camera.x, this.panTarget.y - this.camera.y) < 0.5) {
+                this.panTarget = null;
+            }
+            this.camera.clamp();
         }
     }
 
@@ -258,10 +278,18 @@ export class App {
             const k = e.key.toLowerCase();
             this.keys.add(k);
             if (k === 'escape') { this.selected = null; this.renderMenu(); this.closeDialog(); }
-            if (k === 'h') this.panToKey(this.me.rulerKey);
+            if (k === 'h') {
+                const t = this.me.rulerKey != null ? this.game.towers.get(this.me.rulerKey) : null;
+                if (t) { const p = integerPosition(t.x, t.y); this.panTarget = { x: p[0], y: p[1] }; }
+            }
             if (k === 'q') { this.camera.zoom = Math.max(7, this.camera.zoom / 1.2); }
             if (k === 'e') { this.camera.zoom = Math.min(64, this.camera.zoom * 1.2); }
-            if (k === 'r') this.showSupplyLines = !this.showSupplyLines;
+            if (k === 'r' && !e.shiftKey) {
+                this.showSupplyLines = !this.showSupplyLines;
+                this.toast(this.showSupplyLines ? 'Showing all supply lines (R)' : 'Supply lines hidden');
+            } else if (k === 'r' && e.shiftKey) {
+                this.clearSupplyLines();
+            }
             if (k === 'b') this.toggleFog();
             if (k === ' ') { e.preventDefault(); this.togglePause(); }
         });
@@ -293,6 +321,7 @@ export class App {
         const [wx, wy] = this.camera.toWorld(e.clientX, e.clientY, this.renderer.cw, this.renderer.ch);
         if (Math.hypot(e.clientX - this.drag.startX, e.clientY - this.drag.startY) > 6) this.drag.moved = true;
         const t = this.towerAtWorld(wx, wy);
+        if (t !== this.drag.to) this.drag.hoverSince = performance.now();
         this.drag.to = t;
         if (!t || !this.drag.moved) { this.dragPath = null; return; }
         const maxEdge = this.drag.from.forceUnits().maxEdgeDistance();
@@ -300,6 +329,20 @@ export class App {
         this.drag.path = path;
         this.dragPath = path || [this.drag.from.id, t.id];
         this.dragValid = !!path;
+    }
+
+    // Kiomet makes you *hold* the pointer on the destination before it will march the King
+    // through land you don't own (RULER_DRAG_DELAY).
+    rulerNeedsConfirm(drag) {
+        const path = drag.path;
+        if (!path || !drag.to) return false;
+        if (!drag.from.units.hasRuler()) return false;
+        const perilous = path.some((id) => {
+            const t = this.game.getTower(id);
+            return !t || t.owner !== this.me.id;
+        });
+        if (!perilous) return false;
+        return (performance.now() - (drag.hoverSince || 0)) < 1200;
     }
 
     finishDrag(e) {
@@ -314,6 +357,10 @@ export class App {
         if (!drag.to) return;
         const path = drag.path;
         if (!path) return;
+        if (this.rulerNeedsConfirm(drag)) {
+            this.toast('Hold the pointer on the destination for a moment to send your King');
+            return;
+        }
         const src = drag.from;
         const sameAsSelection = this.selected && this.selected.x === src.x && this.selected.y === src.y;
         const err = sameAsSelection
@@ -321,6 +368,24 @@ export class App {
             : this.game.deploy(this.me.id, src.id, path);
         if (err) this.toast(err);
         else if (!sameAsSelection) this.alertBoard.onCapture();
+    }
+
+    // Shift+R: drop the selected tower's line, else one visible line per press (like upstream).
+    clearSupplyLines() {
+        const mine = [...this.me.towers].map((k) => this.game.towers.get(k)).filter(Boolean);
+        const sel = this.selected ? this.game.getTower(this.selected) : null;
+        if (sel && sel.supply) {
+            this.game.setSupplyLine(this.me.id, sel.id, null);
+            this.renderMenu();
+            return;
+        }
+        const line = mine.find((t) => t.supply);
+        if (line) {
+            this.game.setSupplyLine(this.me.id, line.id, null);
+            this.toast('Supply line removed');
+        } else {
+            this.toast('No supply lines to remove');
+        }
     }
 
     selectTower(t) {
@@ -635,12 +700,22 @@ export class App {
         }
     }
 
+    // DeathReason::RulerKilled { alias, unit } -> "King killed by <alias>'s <unit>!"
+    deathText() {
+        const p = this.game.players[this.me.id];
+        const r = p && p.deathReason;
+        if (!r) return 'Your King was killed!';
+        const who = r.killer == null ? 'zombies' : `${this.game.players[r.killer] ? this.game.players[r.killer].name : 'someone'}'s`;
+        const what = r.unit == null ? '' : ` ${UNITS[r.unit].name}`;
+        return `King killed by ${who}${what}!`;
+    }
+
     showDeath(anim) {
         const spawn = D('spawn');
         spawn.classList.toggle('hidden', this.me.alive);
         if (!this.me.alive) {
             const r = D('death-reason');
-            r.textContent = 'Your King was killed!';
+            r.textContent = this.deathText();
             r.classList.remove('hidden');
         }
     }
@@ -743,52 +818,102 @@ function c2(t, u) { return t.units.get(u) > 0; }
 
 const TOWER_GEN_HINT = {};
 
+// Tower reference, worded like the real /towers page: "Upgrades from X (in 20s), requires 2 Factory",
+// "Can contain 12 Soldier, 2 Tank, 10 Shield", "Generates Soldier (every 6s), worth 1 point".
 function towersHtml() {
-    let out = '<table class="tbl"><tr><th>Tower</th><th>Points</th><th>Generates</th><th>Holds</th><th>Upgrades from</th><th>Upgrades to</th></tr>';
+    const icon = (n) => `<img class="ref-ico" src="${svgRef(n)}" alt="${n}">`;
+    const unitRef = (n) => `<span class="ref-unit"><b>${n}</b></span>`;
+    let out = '<p class="ref-lead">The 27 towers. Solid lines are upgrades, dashed lines are prerequisites.</p>';
+    out += '<div class="ref-grid">';
     for (const t of TOWERS) {
-        const gen = Object.entries(t.gen).map(([u, s]) => `${u} / ${s}s`).join(', ') || '—';
-        const cap = Object.entries(t.cap).map(([u, c]) => `${u} ${c}`).join(', ');
-        out += `<tr><td><b>${LABEL[t.name] || t.name}</b></td><td>${t.score}</td><td>${gen}</td>` +
-            `<td>${cap}</td><td>${t.down || (t.pre.length === 0 ? 'on the map' : '')}</td>` +
-            `<td>${t.upgrades.join(', ') || '—'}</td></tr>`;
+        const up = t.down ? `<p>Upgrades from ${icon(t.down)} <b>${t.down}</b> (in ${t.delay}s)` +
+            (t.prereqs.length ? ', requires ' + t.prereqs.map(([p2, n]) => `${n}${icon(p2)}`).join(', ') : '') + '.</p>'
+            : '<p class="ref-dim">Found on the map.</p>';
+        const cap = Object.entries(t.cap).map(([u, c]) => `${c} ${unitRef(u)}`).join(', ');
+        const gen = Object.entries(t.gen).map(([u, sec]) => `${unitRef(u)} (every ${sec}s)`).join(', ');
+        out += `<div class="ref-card">
+            <h3>${icon(t.name)} ${LABEL[t.name] || t.name}</h3>
+            ${up}
+            <p>Can contain ${cap}.</p>
+            <p>Generates ${gen || 'nothing'}, worth ${t.score} point${t.score === 1 ? '' : 's'}.</p>
+            ${t.sensor > 12 ? `<p>Has a ${Math.round(100 * (t.sensor - 12) / 12)}% higher visual range.</p>` : ''}
+            ${t.name === 'Projector' ? '<p>Can send Shields along roads.</p>' : ''}
+        </div>`;
     }
-    return out + '</table>';
+    return out + '</div>';
 }
 
+// Unit reference, worded like the real /units page (damage vs surface/air, speed, range,
+// chopper weight, EMP duration, overflow allowance, which towers make it).
 function unitsHtml() {
-    let out = '<table class="tbl"><tr><th>Unit</th><th>Speed</th><th>Damage</th><th>Notes</th></tr>';
-    const note = {
-        Shield: 'Absorbs damage first. Cannot move, except out of a Projector.',
-        Fighter: 'Shoots down air units.',
-        Chopper: 'Fast, carries soldiers and tanks.',
-        Bomber: 'Devastating against ground forces.',
-        Tank: 'Slow, hits three times as hard as a soldier.',
-        Soldier: 'The basic ground unit.',
-        Shell: 'Fired straight at a tower in range. Cannot capture.',
-        Emp: 'Shuts a tower down for a minute.',
-        Nuke: 'Wipes out everything in a tower.',
-        King: 'Cannot be replaced. Lose him and you lose.',
-    };
-    for (let u = 0; u < 10; u++) {
-        const n = UNITS[u].name;
-        out += `<tr><td>${LABEL[n] || n}</td><td>${UNITS[u].speed === 'shield' ? 'immobile' : UNITS[u].speed}</td>` +
-            `<td>${UNITS[u].damage === 31 ? '∞' : UNITS[u].damage}</td><td>${note[n]}</td></tr>`;
+    const icon = (n) => `<img class="ref-ico" src="${svgRef(n)}" alt="${n}">`;
+    let out = '<p class="ref-lead">The 10 units. They generally fight in the order listed — ' +
+        'shield always absorbs damage first.</p><div class="ref-grid">';
+    const SPEED = { slow: 'Travels at a slow speed.', normal: 'Travels at a moderate speed.', fast: 'Travels at a fast speed.', shield: 'Is immobile.' };
+    const RANGE = { short: 'Has a short range.', medium: 'Has a medium range.', long: 'Has a long range.' };
+    for (let u = 0; u < UNITS.length; u++) {
+        const d = UNITS[u];
+        const makers = TOWERS.filter((t) => t.gen[d.name]).map((t) => icon(t.name)).join(' ');
+        const surface = Math.max(damageOf(u, 0, 0), damageOf(u, 1, 0));
+        const air = Math.max(damageOf(u, 0, 1), damageOf(u, 1, 1));
+        let dmg = surface === air ? `Does ${surface >= 31 ? 'infinite' : surface} damage.`
+            : `Does ${surface >= 31 ? 'infinite' : surface} damage against surface, ${air} damage against air.`;
+        out += `<div class="ref-card">
+            <h3>${icon(d.name)} ${LABEL[d.name] || d.name}</h3>
+            ${makers ? `<p>Produced by ${makers}.</p>` : ''}
+            <p>${dmg}</p>
+            <p>${d.name === 'Shield' ? 'Immobile unless sent from a Projector, in which case it travels fast.' : SPEED[d.speed] || ''}</p>
+            ${d.range ? `<p>${RANGE[d.range]}</p>` : ''}
+            ${d.weight ? `<p>Has weight of ${d.weight} for Choppers.</p>` : ''}
+            ${d.name === 'Chopper' ? '<p>Can carry other units (weight of 4).</p>' : ''}
+            ${d.name === 'Emp' ? '<p>Disables a tower for 60s.</p>' : ''}
+            ${d.maxOverflow ? `<p>Up to ${d.maxOverflow} can temporarily overflow a tower.</p>` : ''}
+            ${d.name === 'King' ? `<p>Boosts shield capacity by ${RULER_SHIELD_BOOST}. If it dies, you lose the game.</p>` : ''}
+        </div>`;
     }
-    return out + '</table>';
+    return out + '</div>';
 }
 
+function damageOf(u, uf, af) {
+    // local mirror of data.js damage() for display only
+    const name = UNITS[u].name;
+    const f = (uf || af) ? 1 : 0;
+    switch (name) {
+        case 'Tank': return 3;
+        case 'Fighter': return f === 1 ? 3 : 1;
+        case 'Bomber': return (f === 1 && af === 0) ? 5 : 1;
+        case 'Chopper': return f === 1 ? 3 : 1;
+        case 'Nuke': return 31;
+        case 'Shell': return 3;
+        default: return 1;
+    }
+}
+
+function svgRef(name) {
+    const svg = (TOWER_SVG[name] || UNIT_SVG[name] || '').replace(/stroke="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?"/g, 'stroke="#cfe0ff"');
+    return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
+}
+
+// Help, condensed from the real client help (client/src/ui/translations/help/en.md).
 const HELP_HTML = `
-<p><b>Drag</b> from one of your towers to another tower to send its units along the roads. They claim
-every empty tower on the way, fight whatever they meet, and keep going if they win. Shields stay behind
-to defend.</p>
-<p><b>Click</b> a tower to open its menu. Upgrades list the towers they require. While a tower is
-upgrading it makes nothing, sees no further than a mine and scores nothing.</p>
-<p><b>Supply lines:</b> click a tower that makes units, then drag from it. Whenever the tower fills up it
-sends its units down the line, and units arriving at a tower with its own supply line carry on along it.</p>
-<p><b>Protect your King.</b> When your King is captured you lose the game. Towers at and next to your
-King make units and shields twice as fast.</p>
-<p><b>Score</b> by holding towers. Mines, factories, quarries, towns, refineries and cities are worth more.</p>
-<p><b>Keys:</b> H finds your King, Q/E zoom, WASD or right-drag pans, R shows supply lines, Space pauses.</p>
+<p>Kiomet is a real-time strategy game: expand your territory by sending units to capture towers.</p>
+<h3>How to play</h3>
+<p>Drag units to capture towers. To upgrade a tower, click it and then click an available upgrade.
+Upgrades list their requirements next to them.</p>
+<h3>How to win</h3>
+<p>Earn points by capturing towers and holding them as long as possible. Protect your King —
+losing it costs you the game. A Bunker or Headquarters can survive a few Nukes.</p>
+<h3>Supply lines</h3>
+<p>Towers that make units can send them automatically. Click a tower to open its menu, then drag
+from it as normal; if the path shows moving arrows, you succeeded. Hold <b>R</b> to show all your
+supply lines. Delete one by drawing it again or with <b>Shift+R</b>.</p>
+<h3>Alliances</h3>
+<p>Select a tower of another player and click the handshake button to request or accept an
+alliance. Until it is broken, neither side can attack the other.</p>
+<h3>Keys</h3>
+<p><b>H</b> find your King · <b>Q</b>/<b>E</b> zoom · <b>WASD</b> or arrows to pan ·
+<b>T</b> mark towers of the selected kind · <b>R</b> supply lines · <b>B</b> fog of war ·
+<b>Space</b> pause · <b>Esc</b> close menus.</p>
 `;
 
 function escapeHtml(s) {

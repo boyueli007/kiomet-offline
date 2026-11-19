@@ -147,10 +147,14 @@ export class Renderer {
         ctx.save();
         ctx.setLineDash([6, 5]);
         ctx.lineWidth = 1.5;
+        const showAll = !!view.showSupplyLines;
         for (const t of game.towers.values()) {
-            if (!t.supply || t.owner !== view.playerId) continue;
+            if (!t.supply) continue;
+            const mine = t.owner === view.playerId;
+            if (!mine && !showAll) continue;
+            if (this.fog && !this.fog(t)) continue;
             const p0 = integerPosition(t.x, t.y);
-            ctx.strokeStyle = 'rgba(116,185,255,0.75)';
+            ctx.strokeStyle = mine ? 'rgba(116,185,255,0.75)' : 'rgba(180,180,190,0.35)';
             ctx.beginPath();
             let prev = p0;
             const [x0, y0] = this.camera.toScreen(prev[0], prev[1], this.cw, this.ch);

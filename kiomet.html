@@ -148,6 +148,14 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 #dialog .card h2{margin:0 0 .6rem}
 #dialog-close{float:right;background:#00000055;border:1px solid #ffffff33;color:var(--text);border-radius:.3rem;
   padding:.15rem .5rem;cursor:pointer}
+.ref-lead{opacity:.8;margin:0 0 .8rem}
+.ref-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(17rem,1fr));gap:.7rem}
+.ref-card{background:#ffffff0a;border:1px solid #ffffff14;border-radius:.4rem;padding:.6rem .7rem;font-size:.8rem}
+.ref-card h3{margin:0 0 .4rem;font-size:.95rem;display:flex;align-items:center;gap:.35rem}
+.ref-card p{margin:.25rem 0;opacity:.9;line-height:1.35}
+.ref-ico{width:1.4rem;height:1.4rem;vertical-align:middle;object-fit:contain}
+.ref-unit{color:#cfe0ff}
+.ref-dim{opacity:.55}
 .tbl{width:100%;border-collapse:collapse;font-size:.82rem}
 .tbl th,.tbl td{text-align:left;padding:.25rem .45rem;border-bottom:1px solid #ffffff14;vertical-align:top}
 .tbl th{opacity:.7;font-weight:600;position:sticky;top:0;background:var(--panel-solid)}
@@ -765,18 +773,20 @@ class Combatants {
 
 // Fight two combatants in place. Returns ATTACKER, DEFENDER or 0 (stalemate).
 //
-// Mirrors Combatants::fight: the air field resolves first, then the surface; at zero damage the
-// defender spends first, otherwise whoever is "ahead" spends a unit to cancel the damage.
+// This is a direct transcription of Kiomet's `Combatants::fight`: the air field resolves first,
+// then the surface. At zero damage the defender presents a unit first; otherwise whoever is
+// "ahead" must spend a unit to cancel the damage. Each side keeps one unit "in hand" — that unit
+// is only removed when it is replaced by the next one (or when the side runs out), which is why
+// the original can hand a King a last stand and then consume it.
 function fight(A, D, onInfo) {
+    // Shields are not used offensively against towers.
     if (A.towerType != null) D.units.subtract(SHIELD, 1e9);
     if (D.towerType != null) A.units.subtract(SHIELD, 1e9);
 
     let dmg = 0;
     let lastA = -1, lastD = -1;
-    const flags = { emp: false, nuke: false, shell: false };
-    let boundCheck = false;
+    let emped = false, nuked = false, shelled = false;
 
-    // Units not yet committed (the currently "in hand" unit is excluded).
     const unusedUnits = (c, last) => {
         const out = [];
         for (const [u, count] of c.units.counts()) {
@@ -787,23 +797,22 @@ function fight(A, D, onInfo) {
     };
 
     const fire = (unit, isAtt) => {
-        if (flags[unit === EMP ? 'emp' : unit === NUKE ? 'nuke' : 'shell']) return;
-        flags[unit === EMP ? 'emp' : unit === NUKE ? 'nuke' : 'shell'] = true;
-        if (onInfo) onInfo({ type: unit === EMP ? 'emp' : unit === NUKE ? 'nuke' : 'shell', side: isAtt ? ATTACKER : DEFENDER });
+        const key = unit === EMP ? 'emp' : unit === NUKE ? 'nuke' : 'shell';
+        const was = key === 'emp' ? emped : key === 'nuke' ? nuked : shelled;
+        if (was) return;
+        if (key === 'emp') emped = true; else if (key === 'nuke') nuked = true; else shelled = true;
+        if (onInfo) onInfo({ type: key, side: isAtt ? ATTACKER : DEFENDER });
     };
 
-    // Commit `unit` for one side; returns the new "in hand" unit.
+    // Commit `unit` as the new in-hand unit for `me`; returns the new in-hand unit index.
     const commit = (me, myLast, enemyLast, unit) => {
-        boundCheck = true;
         const isAtt = me === A;
         if (unit >= 0 && isSingleUse(unit)) {
             fire(unit, isAtt);
-            me.units.subtract(unit, 1);
+            me.units.subtract(unit, 1);       // single-use units are spent immediately
         }
         if (myLast >= 0 && !isSingleUse(myLast)) {
-            if (myLast === RULER && onInfo) {
-                onInfo({ type: 'ruler', side: isAtt ? ATTACKER : DEFENDER, by: enemyLast });
-            }
+            if (myLast === RULER && onInfo) onInfo({ type: 'ruler', side: isAtt ? ATTACKER : DEFENDER, by: enemyLast });
             me.units.subtract(myLast, 1);
         }
         return unit >= 0 ? unit : myLast;
@@ -819,14 +828,14 @@ function fight(A, D, onInfo) {
     };
 
     for (const fld of [1, 0]) {
-        // `killedNukes < 2` lets both sides keep spending through a nuclear exchange.
-        let killedNukes = 0;
+        // Pick the next unit of exactly this field. `anyAir` lets a shield follow an airborne
+        // group (its Field is the group's field).
         const pick = (me, last, anyAir) => {
             const t = me.towerType;
             for (const [u, c] of unusedUnits(me, last)) {
                 const overflow = t != null && c > me.units.capacity(u, t);
                 const uf = field(u, overflow, t == null, anyAir);
-                if (uf >= fld) return [u, uf];
+                if (uf === fld) return [u, uf];
             }
             return null;
         };
@@ -836,7 +845,7 @@ function fight(A, D, onInfo) {
             return fld === 1 ? pick(me, last, true) : n;
         };
 
-        for (let guard = 0; guard < 4000 && killedNukes < 2; guard++) {
+        for (let guard = 0; guard < 4000; guard++) {
             let na = null, nd = null;
             if (dmg < 0) na = nextUnit(A, lastA);
             else if (dmg > 0) nd = nextUnit(D, lastD);
@@ -845,22 +854,19 @@ function fight(A, D, onInfo) {
                 if (d) nd = d; else na = a;
             }
             if (na) {
-                if (na[0] === NUKE) killedNukes += 1; // count
                 lastA = commit(A, lastA, lastD, na[0]);
                 dmg += damageAgainst(na[0], na[1], D, fld, dmg);
             } else if (nd) {
-                if (nd[0] === NUKE) killedNukes += 1; // count
                 lastD = commit(D, lastD, lastA, nd[0]);
                 dmg += damageAgainst(nd[0], nd[1], A, fld, dmg);
             } else break;
         }
     }
 
-    // Spend one last unit so exactly one side ends up empty.
-    const first = (c, last) => { const u = unusedUnits(c, last); return u.length ? u[0][0] : -1; };
-    const na = first(A, lastA), nd = first(D, lastD);
-    const order = nd >= 0 ? [ATTACKER, DEFENDER] : [DEFENDER, ATTACKER];
-    for (const side of order) {
+    // One side has run dry. Spend the last unit so exactly one combatant ends up empty.
+    const firstOf = (c, last) => { const u = unusedUnits(c, last); return u.length ? u[0][0] : -1; };
+    const na = firstOf(A, lastA), nd = firstOf(D, lastD);
+    for (const side of (nd >= 0 ? [ATTACKER, DEFENDER] : [DEFENDER, ATTACKER])) {
         if (side === ATTACKER && dmg <= 0 && na >= 0) {
             dmg += damageAgainst(na, 0, D, 0, dmg);
             lastA = commit(A, lastA, lastD, na);
@@ -868,28 +874,6 @@ function fight(A, D, onInfo) {
             dmg += damageAgainst(nd, 0, A, 0, dmg);
             lastD = commit(D, lastD, lastA, nd);
         }
-    }
-
-    // A shot that the other side could not answer keeps landing: this is what makes a nuke
-    // (or a hopeless last soldier) clear out everything it can reach.
-    for (let guard = 0; guard < 64; guard++) {
-        if (dmg > 0 && lastA >= 0 && !isSingleUse(lastA)) {
-            const a = unusedUnits(A, lastA);
-            if (a.length) {
-                dmg += damageAgainst(a[0][0], 0, D, 0, dmg);
-                lastA = commit(A, lastA, lastD, a[0][0]);
-                continue;
-            }
-        }
-        if (dmg < 0 && lastD >= 0 && !isSingleUse(lastD)) {
-            const d = unusedUnits(D, lastD);
-            if (d.length) {
-                dmg += damageAgainst(d[0][0], 0, A, 0, dmg);
-                lastD = commit(D, lastD, lastA, d[0][0]);
-                continue;
-            }
-        }
-        break;
     }
 
     if (A.units.isAlive() || (A.towerType != null && dmg >= 0)) return ATTACKER;
@@ -943,20 +927,15 @@ class Force {
     }
     get source() { return this.path[Math.min(this.idx, this.path.length - 1)]; }
     get destination() { return this.path[Math.min(this.idx + 1, this.path.length - 1)]; }
-    // Forces leaving the King's tower march at half the usual pace.
     get required() {
         const base = progressRequired(this.source, this.destination);
         return this.slow ? Math.min(255, base * this.slow) : base;
     }
     get isLast() { return this.idx >= this.path.length - 2; }
-    // Where we would land next, whether or not we are already at the final destination.
     get nextDestination() { return this.path[Math.min(this.idx + 1, this.path.length - 1)]; }
-    // Advance; returns true when it arrives at the current destination.
     // Advance one tick. Only the *final* leg counts as an arrival: while a force travels it is
     // also the live copy of its supply line, and the stops in between are checkpoints.
     tick() {
-        // A parked force reports its arrival exactly once; the tower then decides what happens
-        // (continuing along a supply line, or unloading into a friend).
         if (this.parked) {
             if (this.reported) return false;
             this.reported = true;
@@ -989,7 +968,6 @@ class Force {
 }
 
 function makeForce(owner, units, path) { return new Force(owner, units, path); }
-
 // ---- glyphs.js ----
 // Tower and unit glyphs, taken from Kiomet's own /towers and /units pages
 // (AGPL-3.0-or-later, Softbear, Inc.). Drawn as SVG so they stay crisp at any zoom.
@@ -1711,7 +1689,16 @@ class Game {
                 let towerEmped = false;
                 const winner = fight(new Combatants(f.units), new Combatants(t.units, t.type), (e) => {
                     if (e.type === 'emp' && e.side === ATTACKER) towerEmped = true;
-                    this.info({ ...e, tower: id });
+                    if (e.type === 'ruler') {
+                        // DeathReason::RulerKilled { alias, unit }: remember who and what
+                        const victim = e.side === ATTACKER ? fp : tp;
+                        const killer = e.side === ATTACKER ? tp : fp;
+                        const vp = victim != null ? this.players[victim] : null;
+                        if (vp) vp.deathReason = { killer, unit: e.by == null ? null : e.by };
+                        this.info({ ...e, tower: id, killer });
+                    } else {
+                        this.info({ ...e, tower: id });
+                    }
                 });
                 if (towerEmped) t.delay = Math.max(t.delay, EMP_TICKS);
                 t.hit = 2;
@@ -1750,7 +1737,11 @@ class Game {
             t.units.addUnitsToTower(f.units, t.type, t.owner !== null);
             this.removeForce(f);
         } else if (f.units.get(RULER) > 0) {
-            if (f.owner !== null) this.info({ type: 'ruler', player: f.owner, side: ATTACKER, tower: id });
+            if (f.owner !== null) {
+                this.info({ type: 'ruler', player: f.owner, side: ATTACKER, tower: id, killer: t.owner });
+                const vp = this.players[f.owner];
+                if (vp) vp.deathReason = { killer: t.owner, unit: null };
+            }
             this.removeForce(f);
         } else {
             this.removeForce(f);
@@ -2182,10 +2173,14 @@ class Renderer {
         ctx.save();
         ctx.setLineDash([6, 5]);
         ctx.lineWidth = 1.5;
+        const showAll = !!view.showSupplyLines;
         for (const t of game.towers.values()) {
-            if (!t.supply || t.owner !== view.playerId) continue;
+            if (!t.supply) continue;
+            const mine = t.owner === view.playerId;
+            if (!mine && !showAll) continue;
+            if (this.fog && !this.fog(t)) continue;
             const p0 = integerPosition(t.x, t.y);
-            ctx.strokeStyle = 'rgba(116,185,255,0.75)';
+            ctx.strokeStyle = mine ? 'rgba(116,185,255,0.75)' : 'rgba(180,180,190,0.35)';
             ctx.beginPath();
             let prev = p0;
             const [x0, y0] = this.camera.toScreen(prev[0], prev[1], this.cw, this.ch);
@@ -2898,6 +2893,7 @@ class App {
             dragPath: this.dragPath,
             dragValid: this.dragValid,
             markType: this.markType(),
+            showSupplyLines: this.showSupplyLines,
             fog: (t) => this.isVisible(t),
         });
         // Once per game second (and once right after any pause), same cadence as the server.
@@ -2911,6 +2907,12 @@ class App {
         this.updateHud();
         if (this.selected) this.positionMenu();
         requestAnimationFrame((t) => this.frame(t));
+    }
+
+    closeMenuOnPan() {
+        this.selected = null;
+        this.lastAlertSig = null;
+        this.renderMenu();
     }
 
     // Fog of war is a player setting (default on, like the real game).
@@ -2941,7 +2943,20 @@ class App {
         if (this.keys.has('w') || this.keys.has('arrowup')) dy -= sp;
         if (this.keys.has('s') || this.keys.has('arrowdown')) dy += sp;
         if (dx || dy) {
-            this.camera.x += dx; this.camera.y += dy; this.camera.clamp();
+            this.camera.x += dx; this.camera.y += dy;
+            this.panTarget = null;
+            this.camera.clamp();
+            if (this.selected) this.closeMenuOnPan();
+        }
+        // A queued "find my King" glides the camera instead of teleporting.
+        if (this.panTarget) {
+            const k = Math.min(1, dt * 8);
+            this.camera.x += (this.panTarget.x - this.camera.x) * k;
+            this.camera.y += (this.panTarget.y - this.camera.y) * k;
+            if (Math.hypot(this.panTarget.x - this.camera.x, this.panTarget.y - this.camera.y) < 0.5) {
+                this.panTarget = null;
+            }
+            this.camera.clamp();
         }
     }
 
@@ -3026,10 +3041,18 @@ class App {
             const k = e.key.toLowerCase();
             this.keys.add(k);
             if (k === 'escape') { this.selected = null; this.renderMenu(); this.closeDialog(); }
-            if (k === 'h') this.panToKey(this.me.rulerKey);
+            if (k === 'h') {
+                const t = this.me.rulerKey != null ? this.game.towers.get(this.me.rulerKey) : null;
+                if (t) { const p = integerPosition(t.x, t.y); this.panTarget = { x: p[0], y: p[1] }; }
+            }
             if (k === 'q') { this.camera.zoom = Math.max(7, this.camera.zoom / 1.2); }
             if (k === 'e') { this.camera.zoom = Math.min(64, this.camera.zoom * 1.2); }
-            if (k === 'r') this.showSupplyLines = !this.showSupplyLines;
+            if (k === 'r' && !e.shiftKey) {
+                this.showSupplyLines = !this.showSupplyLines;
+                this.toast(this.showSupplyLines ? 'Showing all supply lines (R)' : 'Supply lines hidden');
+            } else if (k === 'r' && e.shiftKey) {
+                this.clearSupplyLines();
+            }
             if (k === 'b') this.toggleFog();
             if (k === ' ') { e.preventDefault(); this.togglePause(); }
         });
@@ -3061,6 +3084,7 @@ class App {
         const [wx, wy] = this.camera.toWorld(e.clientX, e.clientY, this.renderer.cw, this.renderer.ch);
         if (Math.hypot(e.clientX - this.drag.startX, e.clientY - this.drag.startY) > 6) this.drag.moved = true;
         const t = this.towerAtWorld(wx, wy);
+        if (t !== this.drag.to) this.drag.hoverSince = performance.now();
         this.drag.to = t;
         if (!t || !this.drag.moved) { this.dragPath = null; return; }
         const maxEdge = this.drag.from.forceUnits().maxEdgeDistance();
@@ -3068,6 +3092,20 @@ class App {
         this.drag.path = path;
         this.dragPath = path || [this.drag.from.id, t.id];
         this.dragValid = !!path;
+    }
+
+    // Kiomet makes you *hold* the pointer on the destination before it will march the King
+    // through land you don't own (RULER_DRAG_DELAY).
+    rulerNeedsConfirm(drag) {
+        const path = drag.path;
+        if (!path || !drag.to) return false;
+        if (!drag.from.units.hasRuler()) return false;
+        const perilous = path.some((id) => {
+            const t = this.game.getTower(id);
+            return !t || t.owner !== this.me.id;
+        });
+        if (!perilous) return false;
+        return (performance.now() - (drag.hoverSince || 0)) < 1200;
     }
 
     finishDrag(e) {
@@ -3082,6 +3120,10 @@ class App {
         if (!drag.to) return;
         const path = drag.path;
         if (!path) return;
+        if (this.rulerNeedsConfirm(drag)) {
+            this.toast('Hold the pointer on the destination for a moment to send your King');
+            return;
+        }
         const src = drag.from;
         const sameAsSelection = this.selected && this.selected.x === src.x && this.selected.y === src.y;
         const err = sameAsSelection
@@ -3089,6 +3131,24 @@ class App {
             : this.game.deploy(this.me.id, src.id, path);
         if (err) this.toast(err);
         else if (!sameAsSelection) this.alertBoard.onCapture();
+    }
+
+    // Shift+R: drop the selected tower's line, else one visible line per press (like upstream).
+    clearSupplyLines() {
+        const mine = [...this.me.towers].map((k) => this.game.towers.get(k)).filter(Boolean);
+        const sel = this.selected ? this.game.getTower(this.selected) : null;
+        if (sel && sel.supply) {
+            this.game.setSupplyLine(this.me.id, sel.id, null);
+            this.renderMenu();
+            return;
+        }
+        const line = mine.find((t) => t.supply);
+        if (line) {
+            this.game.setSupplyLine(this.me.id, line.id, null);
+            this.toast('Supply line removed');
+        } else {
+            this.toast('No supply lines to remove');
+        }
     }
 
     selectTower(t) {
@@ -3403,12 +3463,22 @@ class App {
         }
     }
 
+    // DeathReason::RulerKilled { alias, unit } -> "King killed by <alias>'s <unit>!"
+    deathText() {
+        const p = this.game.players[this.me.id];
+        const r = p && p.deathReason;
+        if (!r) return 'Your King was killed!';
+        const who = r.killer == null ? 'zombies' : `${this.game.players[r.killer] ? this.game.players[r.killer].name : 'someone'}'s`;
+        const what = r.unit == null ? '' : ` ${UNITS[r.unit].name}`;
+        return `King killed by ${who}${what}!`;
+    }
+
     showDeath(anim) {
         const spawn = D('spawn');
         spawn.classList.toggle('hidden', this.me.alive);
         if (!this.me.alive) {
             const r = D('death-reason');
-            r.textContent = 'Your King was killed!';
+            r.textContent = this.deathText();
             r.classList.remove('hidden');
         }
     }
@@ -3511,52 +3581,102 @@ function c2(t, u) { return t.units.get(u) > 0; }
 
 const TOWER_GEN_HINT = {};
 
+// Tower reference, worded like the real /towers page: "Upgrades from X (in 20s), requires 2 Factory",
+// "Can contain 12 Soldier, 2 Tank, 10 Shield", "Generates Soldier (every 6s), worth 1 point".
 function towersHtml() {
-    let out = '<table class="tbl"><tr><th>Tower</th><th>Points</th><th>Generates</th><th>Holds</th><th>Upgrades from</th><th>Upgrades to</th></tr>';
+    const icon = (n) => `<img class="ref-ico" src="${svgRef(n)}" alt="${n}">`;
+    const unitRef = (n) => `<span class="ref-unit"><b>${n}</b></span>`;
+    let out = '<p class="ref-lead">The 27 towers. Solid lines are upgrades, dashed lines are prerequisites.</p>';
+    out += '<div class="ref-grid">';
     for (const t of TOWERS) {
-        const gen = Object.entries(t.gen).map(([u, s]) => `${u} / ${s}s`).join(', ') || '—';
-        const cap = Object.entries(t.cap).map(([u, c]) => `${u} ${c}`).join(', ');
-        out += `<tr><td><b>${LABEL[t.name] || t.name}</b></td><td>${t.score}</td><td>${gen}</td>` +
-            `<td>${cap}</td><td>${t.down || (t.pre.length === 0 ? 'on the map' : '')}</td>` +
-            `<td>${t.upgrades.join(', ') || '—'}</td></tr>`;
+        const up = t.down ? `<p>Upgrades from ${icon(t.down)} <b>${t.down}</b> (in ${t.delay}s)` +
+            (t.prereqs.length ? ', requires ' + t.prereqs.map(([p2, n]) => `${n}${icon(p2)}`).join(', ') : '') + '.</p>'
+            : '<p class="ref-dim">Found on the map.</p>';
+        const cap = Object.entries(t.cap).map(([u, c]) => `${c} ${unitRef(u)}`).join(', ');
+        const gen = Object.entries(t.gen).map(([u, sec]) => `${unitRef(u)} (every ${sec}s)`).join(', ');
+        out += `<div class="ref-card">
+            <h3>${icon(t.name)} ${LABEL[t.name] || t.name}</h3>
+            ${up}
+            <p>Can contain ${cap}.</p>
+            <p>Generates ${gen || 'nothing'}, worth ${t.score} point${t.score === 1 ? '' : 's'}.</p>
+            ${t.sensor > 12 ? `<p>Has a ${Math.round(100 * (t.sensor - 12) / 12)}% higher visual range.</p>` : ''}
+            ${t.name === 'Projector' ? '<p>Can send Shields along roads.</p>' : ''}
+        </div>`;
     }
-    return out + '</table>';
+    return out + '</div>';
 }
 
+// Unit reference, worded like the real /units page (damage vs surface/air, speed, range,
+// chopper weight, EMP duration, overflow allowance, which towers make it).
 function unitsHtml() {
-    let out = '<table class="tbl"><tr><th>Unit</th><th>Speed</th><th>Damage</th><th>Notes</th></tr>';
-    const note = {
-        Shield: 'Absorbs damage first. Cannot move, except out of a Projector.',
-        Fighter: 'Shoots down air units.',
-        Chopper: 'Fast, carries soldiers and tanks.',
-        Bomber: 'Devastating against ground forces.',
-        Tank: 'Slow, hits three times as hard as a soldier.',
-        Soldier: 'The basic ground unit.',
-        Shell: 'Fired straight at a tower in range. Cannot capture.',
-        Emp: 'Shuts a tower down for a minute.',
-        Nuke: 'Wipes out everything in a tower.',
-        King: 'Cannot be replaced. Lose him and you lose.',
-    };
-    for (let u = 0; u < 10; u++) {
-        const n = UNITS[u].name;
-        out += `<tr><td>${LABEL[n] || n}</td><td>${UNITS[u].speed === 'shield' ? 'immobile' : UNITS[u].speed}</td>` +
-            `<td>${UNITS[u].damage === 31 ? '∞' : UNITS[u].damage}</td><td>${note[n]}</td></tr>`;
+    const icon = (n) => `<img class="ref-ico" src="${svgRef(n)}" alt="${n}">`;
+    let out = '<p class="ref-lead">The 10 units. They generally fight in the order listed — ' +
+        'shield always absorbs damage first.</p><div class="ref-grid">';
+    const SPEED = { slow: 'Travels at a slow speed.', normal: 'Travels at a moderate speed.', fast: 'Travels at a fast speed.', shield: 'Is immobile.' };
+    const RANGE = { short: 'Has a short range.', medium: 'Has a medium range.', long: 'Has a long range.' };
+    for (let u = 0; u < UNITS.length; u++) {
+        const d = UNITS[u];
+        const makers = TOWERS.filter((t) => t.gen[d.name]).map((t) => icon(t.name)).join(' ');
+        const surface = Math.max(damageOf(u, 0, 0), damageOf(u, 1, 0));
+        const air = Math.max(damageOf(u, 0, 1), damageOf(u, 1, 1));
+        let dmg = surface === air ? `Does ${surface >= 31 ? 'infinite' : surface} damage.`
+            : `Does ${surface >= 31 ? 'infinite' : surface} damage against surface, ${air} damage against air.`;
+        out += `<div class="ref-card">
+            <h3>${icon(d.name)} ${LABEL[d.name] || d.name}</h3>
+            ${makers ? `<p>Produced by ${makers}.</p>` : ''}
+            <p>${dmg}</p>
+            <p>${d.name === 'Shield' ? 'Immobile unless sent from a Projector, in which case it travels fast.' : SPEED[d.speed] || ''}</p>
+            ${d.range ? `<p>${RANGE[d.range]}</p>` : ''}
+            ${d.weight ? `<p>Has weight of ${d.weight} for Choppers.</p>` : ''}
+            ${d.name === 'Chopper' ? '<p>Can carry other units (weight of 4).</p>' : ''}
+            ${d.name === 'Emp' ? '<p>Disables a tower for 60s.</p>' : ''}
+            ${d.maxOverflow ? `<p>Up to ${d.maxOverflow} can temporarily overflow a tower.</p>` : ''}
+            ${d.name === 'King' ? `<p>Boosts shield capacity by ${RULER_SHIELD_BOOST}. If it dies, you lose the game.</p>` : ''}
+        </div>`;
     }
-    return out + '</table>';
+    return out + '</div>';
 }
 
+function damageOf(u, uf, af) {
+    // local mirror of data.js damage() for display only
+    const name = UNITS[u].name;
+    const f = (uf || af) ? 1 : 0;
+    switch (name) {
+        case 'Tank': return 3;
+        case 'Fighter': return f === 1 ? 3 : 1;
+        case 'Bomber': return (f === 1 && af === 0) ? 5 : 1;
+        case 'Chopper': return f === 1 ? 3 : 1;
+        case 'Nuke': return 31;
+        case 'Shell': return 3;
+        default: return 1;
+    }
+}
+
+function svgRef(name) {
+    const svg = (TOWER_SVG[name] || UNIT_SVG[name] || '').replace(/stroke="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?"/g, 'stroke="#cfe0ff"');
+    return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
+}
+
+// Help, condensed from the real client help (client/src/ui/translations/help/en.md).
 const HELP_HTML = `
-<p><b>Drag</b> from one of your towers to another tower to send its units along the roads. They claim
-every empty tower on the way, fight whatever they meet, and keep going if they win. Shields stay behind
-to defend.</p>
-<p><b>Click</b> a tower to open its menu. Upgrades list the towers they require. While a tower is
-upgrading it makes nothing, sees no further than a mine and scores nothing.</p>
-<p><b>Supply lines:</b> click a tower that makes units, then drag from it. Whenever the tower fills up it
-sends its units down the line, and units arriving at a tower with its own supply line carry on along it.</p>
-<p><b>Protect your King.</b> When your King is captured you lose the game. Towers at and next to your
-King make units and shields twice as fast.</p>
-<p><b>Score</b> by holding towers. Mines, factories, quarries, towns, refineries and cities are worth more.</p>
-<p><b>Keys:</b> H finds your King, Q/E zoom, WASD or right-drag pans, R shows supply lines, Space pauses.</p>
+<p>Kiomet is a real-time strategy game: expand your territory by sending units to capture towers.</p>
+<h3>How to play</h3>
+<p>Drag units to capture towers. To upgrade a tower, click it and then click an available upgrade.
+Upgrades list their requirements next to them.</p>
+<h3>How to win</h3>
+<p>Earn points by capturing towers and holding them as long as possible. Protect your King —
+losing it costs you the game. A Bunker or Headquarters can survive a few Nukes.</p>
+<h3>Supply lines</h3>
+<p>Towers that make units can send them automatically. Click a tower to open its menu, then drag
+from it as normal; if the path shows moving arrows, you succeeded. Hold <b>R</b> to show all your
+supply lines. Delete one by drawing it again or with <b>Shift+R</b>.</p>
+<h3>Alliances</h3>
+<p>Select a tower of another player and click the handshake button to request or accept an
+alliance. Until it is broken, neither side can attack the other.</p>
+<h3>Keys</h3>
+<p><b>H</b> find your King · <b>Q</b>/<b>E</b> zoom · <b>WASD</b> or arrows to pan ·
+<b>T</b> mark towers of the selected kind · <b>R</b> supply lines · <b>B</b> fog of war ·
+<b>Space</b> pause · <b>Esc</b> close menus.</p>
 `;
 
 function escapeHtml(s) {

@@ -129,18 +129,20 @@ export class Combatants {
 
 // Fight two combatants in place. Returns ATTACKER, DEFENDER or 0 (stalemate).
 //
-// Mirrors Combatants::fight: the air field resolves first, then the surface; at zero damage the
-// defender spends first, otherwise whoever is "ahead" spends a unit to cancel the damage.
+// This is a direct transcription of Kiomet's `Combatants::fight`: the air field resolves first,
+// then the surface. At zero damage the defender presents a unit first; otherwise whoever is
+// "ahead" must spend a unit to cancel the damage. Each side keeps one unit "in hand" — that unit
+// is only removed when it is replaced by the next one (or when the side runs out), which is why
+// the original can hand a King a last stand and then consume it.
 export function fight(A, D, onInfo) {
+    // Shields are not used offensively against towers.
     if (A.towerType != null) D.units.subtract(SHIELD, 1e9);
     if (D.towerType != null) A.units.subtract(SHIELD, 1e9);
 
     let dmg = 0;
     let lastA = -1, lastD = -1;
-    const flags = { emp: false, nuke: false, shell: false };
-    let boundCheck = false;
+    let emped = false, nuked = false, shelled = false;
 
-    // Units not yet committed (the currently "in hand" unit is excluded).
     const unusedUnits = (c, last) => {
         const out = [];
         for (const [u, count] of c.units.counts()) {
@@ -151,23 +153,22 @@ export function fight(A, D, onInfo) {
     };
 
     const fire = (unit, isAtt) => {
-        if (flags[unit === EMP ? 'emp' : unit === NUKE ? 'nuke' : 'shell']) return;
-        flags[unit === EMP ? 'emp' : unit === NUKE ? 'nuke' : 'shell'] = true;
-        if (onInfo) onInfo({ type: unit === EMP ? 'emp' : unit === NUKE ? 'nuke' : 'shell', side: isAtt ? ATTACKER : DEFENDER });
+        const key = unit === EMP ? 'emp' : unit === NUKE ? 'nuke' : 'shell';
+        const was = key === 'emp' ? emped : key === 'nuke' ? nuked : shelled;
+        if (was) return;
+        if (key === 'emp') emped = true; else if (key === 'nuke') nuked = true; else shelled = true;
+        if (onInfo) onInfo({ type: key, side: isAtt ? ATTACKER : DEFENDER });
     };
 
-    // Commit `unit` for one side; returns the new "in hand" unit.
+    // Commit `unit` as the new in-hand unit for `me`; returns the new in-hand unit index.
     const commit = (me, myLast, enemyLast, unit) => {
-        boundCheck = true;
         const isAtt = me === A;
         if (unit >= 0 && isSingleUse(unit)) {
             fire(unit, isAtt);
-            me.units.subtract(unit, 1);
+            me.units.subtract(unit, 1);       // single-use units are spent immediately
         }
         if (myLast >= 0 && !isSingleUse(myLast)) {
-            if (myLast === RULER && onInfo) {
-                onInfo({ type: 'ruler', side: isAtt ? ATTACKER : DEFENDER, by: enemyLast });
-            }
+            if (myLast === RULER && onInfo) onInfo({ type: 'ruler', side: isAtt ? ATTACKER : DEFENDER, by: enemyLast });
             me.units.subtract(myLast, 1);
         }
         return unit >= 0 ? unit : myLast;
@@ -183,14 +184,14 @@ export function fight(A, D, onInfo) {
     };
 
     for (const fld of [1, 0]) {
-        // `killedNukes < 2` lets both sides keep spending through a nuclear exchange.
-        let killedNukes = 0;
+        // Pick the next unit of exactly this field. `anyAir` lets a shield follow an airborne
+        // group (its Field is the group's field).
         const pick = (me, last, anyAir) => {
             const t = me.towerType;
             for (const [u, c] of unusedUnits(me, last)) {
                 const overflow = t != null && c > me.units.capacity(u, t);
                 const uf = field(u, overflow, t == null, anyAir);
-                if (uf >= fld) return [u, uf];
+                if (uf === fld) return [u, uf];
             }
             return null;
         };
@@ -200,7 +201,7 @@ export function fight(A, D, onInfo) {
             return fld === 1 ? pick(me, last, true) : n;
         };
 
-        for (let guard = 0; guard < 4000 && killedNukes < 2; guard++) {
+        for (let guard = 0; guard < 4000; guard++) {
             let na = null, nd = null;
             if (dmg < 0) na = nextUnit(A, lastA);
             else if (dmg > 0) nd = nextUnit(D, lastD);
@@ -209,22 +210,19 @@ export function fight(A, D, onInfo) {
                 if (d) nd = d; else na = a;
             }
             if (na) {
-                if (na[0] === NUKE) killedNukes += 1; // count
                 lastA = commit(A, lastA, lastD, na[0]);
                 dmg += damageAgainst(na[0], na[1], D, fld, dmg);
             } else if (nd) {
-                if (nd[0] === NUKE) killedNukes += 1; // count
                 lastD = commit(D, lastD, lastA, nd[0]);
                 dmg += damageAgainst(nd[0], nd[1], A, fld, dmg);
             } else break;
         }
     }
 
-    // Spend one last unit so exactly one side ends up empty.
-    const first = (c, last) => { const u = unusedUnits(c, last); return u.length ? u[0][0] : -1; };
-    const na = first(A, lastA), nd = first(D, lastD);
-    const order = nd >= 0 ? [ATTACKER, DEFENDER] : [DEFENDER, ATTACKER];
-    for (const side of order) {
+    // One side has run dry. Spend the last unit so exactly one combatant ends up empty.
+    const firstOf = (c, last) => { const u = unusedUnits(c, last); return u.length ? u[0][0] : -1; };
+    const na = firstOf(A, lastA), nd = firstOf(D, lastD);
+    for (const side of (nd >= 0 ? [ATTACKER, DEFENDER] : [DEFENDER, ATTACKER])) {
         if (side === ATTACKER && dmg <= 0 && na >= 0) {
             dmg += damageAgainst(na, 0, D, 0, dmg);
             lastA = commit(A, lastA, lastD, na);
@@ -232,28 +230,6 @@ export function fight(A, D, onInfo) {
             dmg += damageAgainst(nd, 0, A, 0, dmg);
             lastD = commit(D, lastD, lastA, nd);
         }
-    }
-
-    // A shot that the other side could not answer keeps landing: this is what makes a nuke
-    // (or a hopeless last soldier) clear out everything it can reach.
-    for (let guard = 0; guard < 64; guard++) {
-        if (dmg > 0 && lastA >= 0 && !isSingleUse(lastA)) {
-            const a = unusedUnits(A, lastA);
-            if (a.length) {
-                dmg += damageAgainst(a[0][0], 0, D, 0, dmg);
-                lastA = commit(A, lastA, lastD, a[0][0]);
-                continue;
-            }
-        }
-        if (dmg < 0 && lastD >= 0 && !isSingleUse(lastD)) {
-            const d = unusedUnits(D, lastD);
-            if (d.length) {
-                dmg += damageAgainst(d[0][0], 0, A, 0, dmg);
-                lastD = commit(D, lastD, lastA, d[0][0]);
-                continue;
-            }
-        }
-        break;
     }
 
     if (A.units.isAlive() || (A.towerType != null && dmg >= 0)) return ATTACKER;
@@ -307,20 +283,15 @@ export class Force {
     }
     get source() { return this.path[Math.min(this.idx, this.path.length - 1)]; }
     get destination() { return this.path[Math.min(this.idx + 1, this.path.length - 1)]; }
-    // Forces leaving the King's tower march at half the usual pace.
     get required() {
         const base = progressRequired(this.source, this.destination);
         return this.slow ? Math.min(255, base * this.slow) : base;
     }
     get isLast() { return this.idx >= this.path.length - 2; }
-    // Where we would land next, whether or not we are already at the final destination.
     get nextDestination() { return this.path[Math.min(this.idx + 1, this.path.length - 1)]; }
-    // Advance; returns true when it arrives at the current destination.
     // Advance one tick. Only the *final* leg counts as an arrival: while a force travels it is
     // also the live copy of its supply line, and the stops in between are checkpoints.
     tick() {
-        // A parked force reports its arrival exactly once; the tower then decides what happens
-        // (continuing along a supply line, or unloading into a friend).
         if (this.parked) {
             if (this.reported) return false;
             this.reported = true;

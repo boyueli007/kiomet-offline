@@ -632,7 +632,16 @@ export class Game {
                 let towerEmped = false;
                 const winner = fight(new Combatants(f.units), new Combatants(t.units, t.type), (e) => {
                     if (e.type === 'emp' && e.side === ATTACKER) towerEmped = true;
-                    this.info({ ...e, tower: id });
+                    if (e.type === 'ruler') {
+                        // DeathReason::RulerKilled { alias, unit }: remember who and what
+                        const victim = e.side === ATTACKER ? fp : tp;
+                        const killer = e.side === ATTACKER ? tp : fp;
+                        const vp = victim != null ? this.players[victim] : null;
+                        if (vp) vp.deathReason = { killer, unit: e.by == null ? null : e.by };
+                        this.info({ ...e, tower: id, killer });
+                    } else {
+                        this.info({ ...e, tower: id });
+                    }
                 });
                 if (towerEmped) t.delay = Math.max(t.delay, EMP_TICKS);
                 t.hit = 2;
@@ -671,7 +680,11 @@ export class Game {
             t.units.addUnitsToTower(f.units, t.type, t.owner !== null);
             this.removeForce(f);
         } else if (f.units.get(RULER) > 0) {
-            if (f.owner !== null) this.info({ type: 'ruler', player: f.owner, side: ATTACKER, tower: id });
+            if (f.owner !== null) {
+                this.info({ type: 'ruler', player: f.owner, side: ATTACKER, tower: id, killer: t.owner });
+                const vp = this.players[f.owner];
+                if (vp) vp.deathReason = { killer: t.owner, unit: null };
+            }
             this.removeForce(f);
         } else {
             this.removeForce(f);

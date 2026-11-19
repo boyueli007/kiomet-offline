@@ -182,6 +182,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
     <button id="pause-btn" title="暂停">❚❚</button>
     <button id="speed-btn" title="游戏速度">1×</button>
     <button id="god-btn" title="无敌模式">无敌</button>
+    <button id="fog-btn" title="战争迷雾（B 键切换）">迷雾:开</button>
     <button id="help-btn">帮助</button>
     <button id="towers-btn">塔</button>
     <button id="units-btn">单位</button>
@@ -220,6 +221,10 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 const TICK_HZ = 4;
 // Towers at or next to the King are high morale: same speed, but slower to leave.
 const RULER_MARCH_MULT = 2;
+// High morale also means the King's tower and its eight neighbours make units and shields
+// twice as fast, and hold ten extra shields (Tower::RULER_SHIELD_BOOST upstream).
+const MORALE_GEN_DIVISOR = 2;
+const RULER_SHIELD_BOOST = 10;
 const SHIELD = 0, FIGHTER = 1, CHOPPER = 2, BOMBER = 3, TANK = 4, SOLDIER = 5,
     SHELL = 6, EMP = 7, NUKE = 8, RULER = 9;
 
@@ -456,7 +461,8 @@ const FNV_PRIME = 16777619;
 
 function fnv(seed, bytes) {
     let h = seed >>> 0;
-    for (const b of bytes) {
+    for (let i = 0; i < bytes.length; i++) {
+        const b = bytes[i];
         h = Math.imul(h, FNV_PRIME) >>> 0;
         h = (h ^ b) >>> 0;
     }
@@ -575,6 +581,50 @@ const isSpawnablePosition = (id) => {
     return connectivity(id) !== undefined;
 };
 
+// ---- towerindex.js ----
+// SPDX-FileCopyrightText: 2026 Kiomet clone contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Tower storage: a keyed grid that behaves like the Map the engine was written against, but
+// only pays for cells that actually hold a tower.
+
+
+const indexKey = (x, y) => y * WORLD_SIZE + x;
+
+class TowerIndex {
+    constructor() {
+        this.grid = new Map();          // tile key -> Tower (sparse; dense enough already)
+        this.version = 0;
+    }
+
+    get size() { return this.grid.size; }
+
+    get(k) { return this.grid.get(k); }
+
+    // Map-compatible helpers used across the engine.
+    has(k) { return this.grid.has(k); }
+    set(k, t) { this.grid.set(k, t); this.version += 1; return this; }
+    delete(k) { const ok = this.grid.delete(k); if (ok) this.version += 1; return ok; }
+    clear() { this.grid.clear(); this.version += 1; }
+    entries() { return this.grid.entries(); }
+    keys() { return this.grid.keys(); }
+    values() { return this.grid.values(); }
+    [Symbol.iterator]() { return this.grid[Symbol.iterator](); }
+    forEach(fn) { return this.grid.forEach(fn); }
+
+    // Towers inside a square of cells around (cx, cy).
+    *near(cx, cy, radius) {
+        for (let y = cy - radius; y <= cy + radius; y++) {
+            if (y < 0 || y >= WORLD_SIZE) continue;
+            for (let x = cx - radius; x <= cx + radius; x++) {
+                if (x < 0 || x >= WORLD_SIZE) continue;
+                const t = this.grid.get(y * WORLD_SIZE + x);
+                if (t) yield t;
+            }
+        }
+    }
+}
+
 // ---- rules.js ----
 // SPDX-FileCopyrightText: 2026 Kiomet clone contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
@@ -621,7 +671,7 @@ class Units {
         // The world's own ruler slot: every tower type has capacity 1 for him.
         if (u === RULER) return towerType == null ? 255 : 1;
         const base = towerType == null ? 255
-            : TOWER[towerType].rawCap(u) + (u === SHIELD && this.hasRuler() ? 10 : 0);
+            : TOWER[towerType].rawCap(u) + (u === SHIELD && this.hasRuler() ? RULER_SHIELD_BOOST : 0);
         return Math.min(255, base);
     }
 
@@ -933,6 +983,97 @@ function makeForce(owner, units, path) { return new Force(owner, units, path); }
 const TOWER_SVG = {"Airfield": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.5 0.2 L 0.5 0.2 L 0.5 -0.2 L -0.5 -0.2 ZM -0.39285716 0.01 L -0.39285716 -0.01 L -0.3214286 -0.01 L -0.3214286 0.01 ZM -0.24999999 0.01 L -0.24999999 -0.01 L -0.1785714 -0.01 L -0.1785714 0.01 ZM -0.10714285 0.01 L -0.10714285 -0.01 L -0.035714276 -0.01 L -0.035714276 0.01 ZM 0.03571431 0.01 L 0.03571431 -0.01 L 0.10714288 -0.01 L 0.10714288 0.01 ZM 0.17857145 0.01 L 0.17857145 -0.01 L 0.25000003 -0.01 L 0.25000003 0.01 ZM 0.32142857 0.01 L 0.32142857 -0.01 L 0.39285713 -0.01 L 0.39285713 0.01 Z\"/></svg>", "Armory": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.3 L -0.4 -0.100000024 Q 0 -0.3 0.39999998 -0.100000024L 0.39999998 0.3 L 0.100000024 0.3 L 0.100000024 0.099999994 L -0.099999994 0.099999994 L -0.099999994 0.3 Z\"/></svg>", "Artillery": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.43 0.21000001 L -0.29000002 0.13999999 L -0.21999997 -0.06999999 L -0.35999995 -0.034999967 L -0.39499998 -0.14000005 L 0.024999976 -0.27999997 L 0.060000062 -0.17500001 L -0.11500001 -0.10499996 Q 0.09500003 -0.06999999 0.27000004 0.21000001ZM 0.04949999 -0.22750002 L 0.42749995 -0.35000002 Z\"/></svg>", "Barracks": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.19999999 L -0.4 -0 C -0.4 -0.25 -0.13333333 -0.25 -0.13333333 -0C -0.13333333 -0.25 0.13333338 -0.25 0.13333338 -0C 0.13333338 -0.25 0.39999998 -0.25 0.39999998 -0L 0.39999998 0.19999999 Z\"/></svg>", "Bunker": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.19999999 Q 0 -0.39999998 0.39999998 0.19999999L 0.100000024 0.19999999 Q 0 -0 -0.099999994 0.19999999Z\"/></svg>", "Centrifuge": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.3 0.3 L -0.3 0.19999999 L -0.19999999 0.099999994 L -0.19999999 -0.3 L -0.099999994 -0.3 L -0.099999994 -0.39999998 L 0.100000024 -0.39999998 L 0.100000024 -0.3 L 0.19999999 -0.3 L 0.19999999 0.099999994 L 0.3 0.19999999 L 0.3 0.3 Z\"/></svg>", "City": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.4 L -0.4 0.3 L -0.3 0.3 L -0.3 -0.19999999 L 0 -0.3 L 0 -0.100000024 L 0.3 -0.100000024 L 0.3 0.3 L 0.39999998 0.3 L 0.39999998 0.4 Z\"/></svg>", "Cliff": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.3 L -0.4 -0.100000024 L -0.3 -0.100000024 L -0.099999994 -0.050000012 L 0.100000024 -0.14999998 L 0.3 -0.100000024 L 0.39999998 -0.100000024 L 0.39999998 0.3 Z\"/></svg>", "Ews": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.3 0.3 L -0.3 0.099999994 L -0.099999994 0.099999994 L -0.19999999 -0 L -0.19999999 -0.19999999 L -0.099999994 -0.3 L 0.100000024 -0.3 L 0.19999999 -0.19999999 L 0.19999999 -0 L 0.100000024 0.099999994 L 0.3 0.099999994 L 0.3 0.3 Z\"/></svg>", "Factory": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.19999999 L -0.4 -0.04000002 L -0.13333333 -0.19999999 L -0.13333333 -0.050000012 L 0.13333338 -0.19999999 L 0.13333338 -0.050000012 L 0.39999998 -0.19999999 L 0.39999998 0.19999999 Z\"/></svg>", "Generator": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.3 L -0.4 -0.35000002 L -0.3 -0.35000002 L -0.3 0.099999994 L -0.19999999 0.099999994 L -0.19999999 -0.35000002 L -0.099999994 -0.35000002 L -0.099999994 0.099999994 L 0 0.099999994 L 0 -0.100000024 L 0.39999998 -0.100000024 L 0.39999998 0.3 Z\"/></svg>", "Headquarters": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.19999999 L -0.4 -0 L -0.19999999 -0 L -0.19999999 -0.19999999 L 0.19999999 -0.19999999 L 0.19999999 -0 L 0.39999998 -0 L 0.39999998 0.19999999 Z\"/></svg>", "Helipad": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.3 0.099999994 L -0.3 -0.100000024 Q -0.3 -0.3 -0.099999994 -0.3L 0.100000024 -0.3 Q 0.3 -0.3 0.3 -0.100000024L 0.3 0.099999994 Q 0.3 0.3 0.100000024 0.3L -0.099999994 0.3 Q -0.3 0.3 -0.3 0.099999994ZM -0.15 0.19999999 L -0.15 -0.19999999 L -0.050000012 -0.19999999 L -0.050000012 -0.050000012 L 0.050000012 -0.050000012 L 0.050000012 -0.19999999 L 0.14999998 -0.19999999 L 0.14999998 0.19999999 L 0.050000012 0.19999999 L 0.050000012 0.050000012 L -0.050000012 0.050000012 L -0.050000012 0.19999999 Z\"/></svg>", "Launcher": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.4 L -0.4 0.3 L -0.15 0.3 L -0.15 0.15 L -0.25 0.25 L -0.275 0.225 L -0.3 0.225 L -0.375 0.15 L -0.375 0.125 L -0.4 0.099999994 L 0.100000024 -0.39999998 L 0.125 -0.375 Q 0.35000002 -0.5 0.22500002 -0.27499998L 0.25 -0.25 L 0.07499999 -0.07499999 L 0.25 0.3 L 0.39999998 0.3 L 0.39999998 0.4 ZM -0.050000012 0.25 L 0.125 0.25 L 0 -0 L -0.050000012 0.050000012 Z\"/></svg>", "Mine": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.3 L -0.099999994 -0.100000024 L 0 -0 L 0.19999999 -0.19999999 L 0.39999998 0.3 L 0.100000024 0.3 L 0.100000024 0.19999999 Q 0 0.099999994 -0.099999994 0.19999999L -0.099999994 0.3 Z\"/></svg>", "Projector": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.25 0.35 L -0.25 0.19999999 L -0.15 0.099999994 L -0.15 0.050000012 Q -0.19999999 -0 -0.19999999 -0.100000024Q -0.19999999 -0.3 0 -0.3Q 0.19999999 -0.3 0.19999999 -0.100000024Q 0.19999999 -0 0.14999998 0.050000012L 0.14999998 0.099999994 L 0.25 0.19999999 L 0.25 0.35 ZM -0.050000012 0.15 L 0.050000012 0.15 L 0.050000012 -0 L -0.050000012 -0 Z\"/></svg>", "Quarry": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.3 L -0.4 -0.100000024 L -0.3 -0.100000024 L -0.19999999 0.099999994 L -0.099999994 0.099999994 L 0 0.19999999 L 0.100000024 0.19999999 L 0.3 -0.100000024 L 0.39999998 -0.100000024 L 0.39999998 0.3 Z\"/></svg>", "Radar": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.3 L -0.4 0.19999999 L -0.19999999 0.19999999 L 0 -0.100000024 Q -0.099999994 -0.3 -0.099999994 -0.39999998L 0.39999998 0.099999994 Q 0.3 0.099999994 0.100000024 -0L 0.19999999 0.19999999 L 0.39999998 0.19999999 L 0.39999998 0.3 Z\"/></svg>", "Rampart": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.3 L -0.4 -0.14999998 L -0.3 -0.14999998 L -0.3 -0.100000024 L -0.19999999 -0.100000024 L -0.19999999 -0.14999998 L -0.099999994 -0.14999998 L -0.099999994 -0.100000024 L 0 -0.100000024 L 0 -0.14999998 L 0.100000024 -0.14999998 L 0.100000024 -0.100000024 L 0.19999999 -0.100000024 L 0.19999999 -0.19999999 L 0.3 -0.25 L 0.39999998 -0.19999999 L 0.39999998 0.3 Z\"/></svg>", "Reactor": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.4 L -0.4 0.19999999 L -0.3 0.19999999 Q -0.15 -0.100000024 -0.3 -0.39999998L 0.3 -0.39999998 Q 0.14999998 -0.100000024 0.3 0.19999999L 0.39999998 0.19999999 L 0.39999998 0.4 Z\"/></svg>", "Refinery": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.3 L -0.4 0.19999999 L -0.3 0.19999999 L -0.3 -0 L -0.325 -0 L -0.325 -0.050000012 L -0.3 -0.050000012 L -0.3 -0.14999998 Q -0.19999999 -0.19999999 -0.099999994 -0.14999998L -0.099999994 -0.050000012 L -0.07499999 -0.050000012 L -0.07499999 -0 L -0.099999994 -0 L -0.099999994 0.099999994 L 0.100000024 0.099999994 L 0.100000024 0.050000012 L 0.19999999 -0.25 L 0.3 0.050000012 L 0.3 0.19999999 L 0.39999998 0.19999999 L 0.39999998 0.3 Z\"/></svg>", "Rocket": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.4 L -0.4 0.19999999 L -0.3 0.19999999 L -0.3 -0.25 L -0.25 -0.39999998 L -0.19999999 -0.39999998 L -0.19999999 -0.25 L -0.15 -0.25 L -0.15 -0.22500002 L -0.050000012 -0.22500002 L -0.050000012 -0.25 C -0.050000012 -0.39999998 0.050000012 -0.39999998 0.050000012 -0.25L 0.050000012 -0 L 0.100000024 0.099999994 L 0.100000024 0.15 L 0.050000012 0.125 L 0.050000012 0.15 L 0.024999976 0.15 L 0.050000012 0.19999999 L 0.19999999 0.19999999 L 0.3 0.3 L 0.39999998 0.3 L 0.39999998 0.4 ZM -0.19999999 0.19999999 L -0.050000012 0.19999999 L -0.025000006 0.15 L -0.050000012 0.15 L -0.050000012 0.125 L -0.099999994 0.15 L -0.099999994 0.099999994 L -0.050000012 -0 L -0.050000012 -0.17500001 L -0.15 -0.17500001 L -0.15 -0.14999998 L -0.19999999 -0.14999998 Z\"/></svg>", "Runway": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.5 0.125 L 0.5 0.125 L 0.5 -0.125 L -0.5 -0.125 ZM -0.39285716 0.01 L -0.39285716 -0.01 L -0.3214286 -0.01 L -0.3214286 0.01 ZM -0.24999999 0.01 L -0.24999999 -0.01 L -0.1785714 -0.01 L -0.1785714 0.01 ZM -0.10714285 0.01 L -0.10714285 -0.01 L -0.035714276 -0.01 L -0.035714276 0.01 ZM 0.03571431 0.01 L 0.03571431 -0.01 L 0.10714288 -0.01 L 0.10714288 0.01 ZM 0.17857145 0.01 L 0.17857145 -0.01 L 0.25000003 -0.01 L 0.25000003 0.01 ZM 0.32142857 0.01 L 0.32142857 -0.01 L 0.39285713 -0.01 L 0.39285713 0.01 Z\"/></svg>", "Satellite": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.19999999 0.3 L -0.15 0.050000012 Q -0.3 -0 -0.4 -0.100000024L -0.4 -0.14999998 Q -0.25 -0.050000012 -0.050000012 -0.050000012L 0 -0.3 L 0.050000012 -0.050000012 Q 0.25 -0.050000012 0.39999998 -0.14999998L 0.39999998 -0.100000024 Q 0.3 -0 0.14999998 0.050000012L 0.19999999 0.3 Z\"/></svg>", "Silo": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.3 0.099999994 L -0.25 -0.100000024 L -0.19999999 -0.100000024 Q 0 0.050000012 0.19999999 -0.100000024L 0.25 -0.100000024 L 0.3 0.099999994 Z\"/></svg>", "Town": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.19999999 L -0.4 0.099999994 L -0.3 0.099999994 L -0.3 -0.100000024 L -0.19999999 -0.19999999 L -0.099999994 -0.100000024 L -0.099999994 0.099999994 L 0.100000024 0.099999994 L 0.100000024 -0.19999999 L 0.3 -0.100000024 L 0.3 0.099999994 L 0.39999998 0.099999994 L 0.39999998 0.19999999 Z\"/></svg>", "Village": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.19999999 L -0.4 0.099999994 L -0.3 0.099999994 L -0.3 -0 L -0.19999999 -0.100000024 L -0.099999994 -0 L -0.099999994 0.099999994 L 0 0.099999994 L 0 -0 L 0.19999999 -0 L 0.19999999 0.099999994 L 0.39999998 0.099999994 L 0.39999998 0.19999999 Z\"/></svg>"};
 const UNIT_SVG = {"Shield": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 -0 C -0.4 0.22076602 -0.22076602 0.4 0 0.4C 0.22076602 0.4 0.4 0.22076602 0.4 -0C 0.4 -0.22076602 0.22076602 -0.4 0 -0.4C -0.22076602 -0.4 -0.4 -0.22076602 -0.4 -0Z\"/></svg>", "Fighter": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.15 0.4 L -0.099999994 0.25 L -0.3 0.19999999 L -0.3 0.099999994 L -0.099999994 -0 L -0.099999994 -0.100000024 L -0.050000012 -0.14999998 L 0 -0.39999998 L 0.050000012 -0.14999998 L 0.100000024 -0.100000024 L 0.100000024 -0 L 0.3 0.099999994 L 0.3 0.19999999 L 0.100000024 0.25 L 0.14999998 0.4 L 0 0.3 Z\"/></svg>", "Chopper": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M 0 -0.39999998 Q 0.14999998 -0.39999998 0.14999998 -0.25L 0.14999998 -0 Q 0.14999998 0.050000012 0.050000012 0.15L 0.050000012 0.35 L 0.14999998 0.375 L 0.14999998 0.4 L -0.15 0.4 L -0.15 0.375 L -0.050000012 0.35 L -0.050000012 0.15 Q -0.15 0.050000012 -0.15 -0L -0.15 -0.25 Q -0.15 -0.39999998 0 -0.39999998Z\"/></svg>", "Bomber": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.19999999 L 0 -0.3 L 0.39999998 0.19999999 L 0.3 0.3 L 0.19999999 0.19999999 L 0 0.3 L -0.19999999 0.19999999 L -0.3 0.3 Z\"/></svg>", "Tank": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.4 0.099999994 L -0.3 -0.050000012 L -0.19999999 -0.050000012 L -0.15 -0.19999999 L 0.050000012 -0.19999999 L 0.100000024 -0.050000012 L 0.3 -0.050000012 L 0.39999998 0.099999994 L 0.3 0.19999999 L -0.3 0.19999999 ZM 0.07499999 -0.125 L 0.27499998 -0.17500001 Z\"/></svg>", "Soldier": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.099999994 0.4 L -0.099999994 -0 Q 0 -0.050000012 0.100000024 0.050000012L 0.100000024 0.4 ZM -0.1 -0.19999999 C -0.1 -0.14480849 -0.055191506 -0.09999999 0 -0.09999999C 0.055191506 -0.09999999 0.1 -0.14480849 0.1 -0.19999999C 0.1 -0.2551915 0.055191506 -0.29999998 0 -0.29999998C -0.055191506 -0.29999998 -0.1 -0.2551915 -0.1 -0.19999999Z\"/></svg>", "Shell": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.15 0.050000012 L 0 -0.35000002 L 0.14999998 0.050000012 L 0.14999998 0.3 Q 0 0.4 -0.15 0.3Z\"/></svg>", "Emp": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.13 0.34000003 L -0.13 0.27499998 L -0.25999996 0.27499998 L -0.13 -0.050000012 L -0.13 -0.18 C -0.13 -0.44 0.13 -0.44 0.13 -0.18L 0.13 -0.050000012 L 0.26 0.27499998 L 0.13 0.27499998 L 0.13 0.34000003 L 0.03249997 0.34000003 L 0.065 0.40499997 L -0.065 0.40499997 L -0.0325 0.34000003 Z\"/></svg>", "Nuke": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.19999999 0.4 L -0.19999999 0.19999999 L -0.099999994 0.099999994 L -0.19999999 -0 L -0.19999999 -0.19999999 L 0 -0.39999998 L 0.19999999 -0.19999999 L 0.19999999 -0 L 0.100000024 0.099999994 L 0.19999999 0.19999999 L 0.19999999 0.4 L 0.100000024 0.3 L -0.099999994 0.3 Z\"/></svg>", "Ruler": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"-0.525 -0.525 1.05 1.05\" fill=\"none\" stroke=\"#b7b7b7ff\" stroke-width=\"0.05\"><path d=\"M -0.25 0.3 L -0.4 -0.3 L -0.15 -0.100000024 L 0 -0.35000002 L 0.14999998 -0.100000024 L 0.39999998 -0.3 L 0.25 0.3 ZM -0.425 -0.27500004 C -0.425 -0.24740428 -0.40259576 -0.22500004 -0.375 -0.22500004C -0.34740424 -0.22500004 -0.325 -0.24740428 -0.325 -0.27500004C -0.325 -0.3025958 -0.34740424 -0.32500005 -0.375 -0.32500005C -0.40259576 -0.32500005 -0.425 -0.3025958 -0.425 -0.27500004ZM -0.05 -0.35000002 C -0.05 -0.32240427 -0.027595753 -0.3 0 -0.3C 0.027595753 -0.3 0.05 -0.32240427 0.05 -0.35000002C 0.05 -0.37759578 0.027595753 -0.40000004 0 -0.40000004C -0.027595753 -0.40000004 -0.05 -0.37759578 -0.05 -0.35000002ZM 0.325 -0.27500004 C 0.325 -0.24740428 0.34740424 -0.22500004 0.375 -0.22500004C 0.40259576 -0.22500004 0.425 -0.24740428 0.425 -0.27500004C 0.425 -0.3025958 0.40259576 -0.32500005 0.375 -0.32500005C 0.34740424 -0.32500005 0.325 -0.3025958 0.325 -0.27500004Z\"/></svg>"};
 
+// ---- fog.js ----
+// SPDX-FileCopyrightText: 2026 Kiomet clone contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Fog of war, ported from Kiomet's client/src/visible.rs: a tower sees `sensor_radius` world
+// units around itself, the union of your towers' sensors is visible, and an inactive tower
+// (upgrading or EMP'd) sees no further than a mine.
+
+
+
+const RAD = 5;                  // world units per cell
+const REF_RADIUS = 15;          // widest sensor radius, in cells (satellite = 30 world units)
+
+class Visibility {
+    constructor() {
+        this.stamp = new Uint32Array(WORLD_SIZE * WORLD_SIZE);
+        this.gen = 0;
+        this.lastVersion = -1;
+        this.dirty = true;
+    }
+
+    invalidate() { this.dirty = true; }
+
+    // union of every sensor you own
+    update(game, playerId, allVisible) {
+        if (allVisible) { this.gen += 1; return; }
+        if (!this.dirty && this.lastVersion === game.towers.version && this.lastPlayer === playerId) return;
+        this.gen += 1;
+        const g = this.gen;
+        this.lastVersion = game.towers.version;
+        this.lastPlayer = playerId;
+        this.dirty = false;
+        for (const t of game.towers.values()) {
+            if (t.owner !== playerId) continue;
+            this.stampArea(t, g);
+        }
+    }
+
+    // `Tower::active()` false -> sensor falls back to a mine's (the client does the same)
+    radiusOf(t) {
+        const type = t.delay > 0 ? 'Mine' : t.type;
+        return TOWER[type].sensor / RAD;
+    }
+
+    stampArea(t, g) {
+        const r = this.radiusOf(t);
+        const r2 = r * r;
+        const x0 = Math.round(t.x), y0 = Math.round(t.y);
+        for (let dy = -REF_RADIUS; dy <= REF_RADIUS; dy++) {
+            const y = y0 + dy;
+            if (y < 0 || y >= WORLD_SIZE) continue;
+            const row = y * WORLD_SIZE;
+            for (let dx = -REF_RADIUS; dx <= REF_RADIUS; dx++) {
+                const x = x0 + dx;
+                if (x < 0 || x >= WORLD_SIZE) continue;
+                if (dx * dx + dy * dy > r2) continue;
+                this.stamp[row + x] = g;
+            }
+        }
+    }
+
+    // Merge another player's sensors (allies share sight, like the client's union).
+    addAllies(game, allies) {
+        if (!allies || !allies.size) return;
+        const g = this.gen;
+        for (const t of game.towers.values()) {
+            if (t.owner != null && allies.has(t.owner)) this.stampArea(t, g);
+        }
+    }
+
+    // Cheap "is this world point inside your sight" for events that are not tied to a tower.
+    near(wx, wy, game) {
+        const cx = Math.round(wx / RAD), cy = Math.round(wy / RAD);
+        for (let dy = -6; dy <= 6; dy++) {
+            for (let dx = -6; dx <= 6; dx++) {
+                const t = game.tower(cx + dx, cy + dy);
+                if (!t) continue;
+                const d = Math.hypot(t.x * RAD - wx, t.y * RAD - wy);
+                if (d <= this.radiusOf(t) * RAD) return true;
+            }
+        }
+        return false;
+    }
+
+    visible(t) {
+        if (!t) return false;
+        if (this.gen === 0) return false;
+        return this.stamp[t.y * WORLD_SIZE + t.x] === this.gen;
+    }
+}
+
 // ---- world.js ----
 // SPDX-FileCopyrightText: 2026 Kiomet clone contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
@@ -940,6 +1081,7 @@ const UNIT_SVG = {"Shield": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\
 // The world: tower tick loop, forces, upgrades, spawning, scoring.
 // Ported from Kiomet common/src/chunk.rs, common/src/chunk/event.rs,
 // common/src/chunk/maintenance.rs, server/src/world.rs, server/src/service.rs.
+
 
 
 
@@ -1009,7 +1151,7 @@ class Player {
 class Game {
     constructor(opts = {}) {
         this.time = 0;
-        this.towers = new Map();
+        this.towers = new TowerIndex();
         this.players = [];
         this.forces = [];
         this.events = [];
@@ -1171,15 +1313,8 @@ class Game {
     sendForce(from, force) {
         force.host = null;
         // The King's high morale: forces leaving his tower (or a neighbour's) march slower.
-        if (from && from.owner != null) {
-            const p = this.players[from.owner];
-            if (p && p.rulerKey != null) {
-                const rk = p.rulerKey;
-                const king = this.towers.get(rk);
-                const dx = Math.abs(from.x - (rk % WORLD_SIZE));
-                const dy = Math.abs(from.y - Math.floor(rk / WORLD_SIZE));
-                if (king && (dx <= 1 && dy <= 1)) force.slow = RULER_MARCH_MULT;
-            }
+        if (from && from.owner != null && this.inMorale(from, from.owner)) {
+            force.slow = RULER_MARCH_MULT;
         }
         this.forces.push(force);
         from.outbound.push(force);
@@ -1420,12 +1555,18 @@ class Game {
             t.delay -= 1;
         } else if (owner !== null) {
             const tt = TOWER[t.type];
+            // High morale: the King's tower and its eight neighbours produce twice as fast,
+            // which is the same as making two every period they would normally make one.
+            const morale = this.inMorale(t, owner) ? MORALE_GEN_DIVISOR : 1;
             for (const name in tt.gen) {
                 const u = tt.genUnitId(name);
-                if (tick % (tt.gen[name] * TICK_HZ) === 0) {
-                    const added = t.units.add(u, 2, t.type, false);
-                    t.units.subtract(u, Math.max(0, added - 1));
-                    if (isMobile(u, t.type) && added < 2) deploy = true;
+                const due = tick % (tt.gen[name] * TICK_HZ) === 0;
+                for (let rep = 0; due && rep < morale; rep++) {
+                    {
+                        const added = t.units.add(u, 2, t.type, false);
+                        t.units.subtract(u, Math.max(0, added - 1));
+                        if (isMobile(u, t.type) && added < 2) deploy = true;
+                    }
                 }
             }
         } else if (TOWER[t.type].down && tick % (60 * TICK_HZ) === 0) {
@@ -1483,6 +1624,16 @@ class Game {
             });
         }
         if (t.flash > 0) t.flash -= 1;
+    }
+
+    // True when the tower sits at or next to its owner's King (Kiomet's "high morale").
+    inMorale(t, owner) {
+        const p = this.players[owner];
+        if (!p || p.rulerKey == null) return false;
+        const rk = p.rulerKey;
+        const king = this.towers.get(rk);
+        if (!king || king.owner !== owner) return false;
+        return Math.abs(t.x - (rk % WORLD_SIZE)) <= 1 && Math.abs(t.y - Math.floor(rk / WORLD_SIZE)) <= 1;
     }
 
     diminish(t) {
@@ -1928,6 +2079,7 @@ class Renderer {
 
     // Which towers should be drawn: everything within the view plus any owned tower.
     draw(game, view) {
+        this.fog = view && view.fog ? view.fog : null;
         const ctx = this.ctx;
         const { cw, ch } = this;
         ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -1963,12 +2115,14 @@ class Renderer {
     }
 
     drawTerritory(ctx, game, visible) {
+        const fog = this.fog;
         const z = this.camera.zoom;
         const r = Math.max(12, z * 2.2);
         ctx.save();
         ctx.globalAlpha = 0.10;
         for (const t of visible) {
             if (t.owner == null) continue;
+            if (fog && !fog(t)) continue;
             const c = this.colorFor(game, t.owner, game.view);
             const [sx, sy] = this.camera.toScreen(integerPosition(t.x, t.y)[0], integerPosition(t.x, t.y)[1], this.cw, this.ch);
             const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
@@ -1992,7 +2146,9 @@ class Renderer {
                 const kk = k1 < k2 ? k1 * 262144 + k2 : k2 * 262144 + k1;
                 if (seen.has(kk)) continue;
                 seen.add(kk);
-                if (!game.getTower(nb)) continue;
+                const other = game.getTower(nb);
+                if (!other) continue;
+                if (this.fog && !(this.fog(t) || this.fog(other))) continue;
                 const b = integerPosition(nb.x, nb.y);
                 const [x1, y1] = this.camera.toScreen(a[0], a[1], this.cw, this.ch);
                 const [x2, y2] = this.camera.toScreen(b[0], b[1], this.cw, this.ch);
@@ -2047,6 +2203,7 @@ class Renderer {
         const z = this.camera.zoom;
         const size = Math.max(10, z * 1.25);
         for (const t of visible) {
+            if (this.fog && !this.fog(t)) continue;
             const a = integerPosition(t.x, t.y);
             const [sx, sy] = this.camera.toScreen(a[0], a[1], this.cw, this.ch);
             const c = this.colorFor(game, t.owner, view);
@@ -2136,6 +2293,9 @@ class Renderer {
         const r = Math.max(3, z * 0.22);
         for (const f of game.forces) {
             if (f.idx >= f.path.length - 1) continue;   // already parked somewhere
+            if (this.fog && view && f.owner !== view.playerId &&
+                !(view.allies && view.allies.has(f.owner)) &&
+                !this.fog(f.source) && !this.fog(f.destination)) continue;
             const [wx, wy] = f.position(0);
             const [sx, sy] = this.camera.toScreen(wx, wy, this.cw, this.ch);
             if (sx < -40 || sy < -40 || sx > this.cw + 40 || sy > this.ch + 40) continue;
@@ -2204,11 +2364,165 @@ const UNIT_TINT = {
     [UNIT_ID.King]: '#ffd700',
 };
 
+// ---- effects.js ----
+// SPDX-FileCopyrightText: 2026 Kiomet clone contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// Battle feedback: sparks when a fight lands, expanding rings for EMP/nuke/shell, floating
+// "+1 capture" pings, and a tiny WebAudio synthesiser (no asset needed).
+
+
+class Effects {
+    constructor() {
+        this.items = [];          // {kind, x, y, t, life, ...}
+        this.audio = null;
+        this.enabled = true;
+    }
+
+    clear() { this.items.length = 0; }
+
+    // Map an engine event to particles. `x, y` are world coordinates.
+    onEvent(e, worldPos) {
+        if (!this.enabled || !worldPos) return;
+        const [x, y] = worldPos;
+        switch (e.type) {
+            case 'shell':
+                this.ring(x, y, 10, 26, '#ffb347', 420);
+                this.play('hit', 0.35);
+                break;
+            case 'emp':
+                this.ring(x, y, 6, 46, '#4cc9f0', 700);
+                this.play('emp', 0.5);
+                break;
+            case 'nuke':
+                this.ring(x, y, 8, 90, '#ff5a5a', 900);
+                this.ring(x, y, 4, 60, '#ffd166', 650);
+                this.play('nuke', 0.6);
+                break;
+            case 'ruler':
+                this.ring(x, y, 6, 50, '#ffd166', 900);
+                this.play('ruler', 0.7);
+                this.float(x, y, 'King lost!', '#ffd166', 1400);
+                break;
+            case 'gained':
+                this.spark(x, y, 7, '#8fd3ff');
+                this.play('capture', 0.18);
+                break;
+            case 'lostTower':
+                this.spark(x, y, 5, '#ff8f7a');
+                break;
+            case 'lostForce':
+                this.spark(x, y, 4, '#cfcfcf');
+                break;
+            case 'died':
+                this.play('loss', 0.5);
+                break;
+            case 'upgrade':
+                this.ring(x, y, 4, 22, '#ffffff', 400);
+                this.play('upgrade', 0.2);
+                break;
+            default:
+                break;
+        }
+    }
+
+    spill(x, y, n, colour) {
+        for (let i = 0; i < n; i++) {
+            const a = Math.random() * Math.PI * 2;
+            const speed = 12 + Math.random() * 26;
+            this.items.push({
+                kind: 'spark', x, y, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed,
+                t: 0, life: 0.35 + Math.random() * 0.3, colour,
+            });
+        }
+    }
+
+    spark(x, y, n, colour) { this.spill(x, y, n, colour); }
+
+    ring(x, y, r0, r1, colour, life) {
+        this.items.push({ kind: 'ring', x, y, r0, r1, t: 0, life: life / 1000, colour });
+    }
+
+    float(x, y, text, colour, life) {
+        this.items.push({ kind: 'float', x, y, text, colour, t: 0, life: life / 1000 });
+    }
+
+    // Advance and draw. `toScreen` converts world (x, y) to canvas pixels.
+    render(ctx, toScreen, zoom, dt = 1 / 60) {
+        if (!this.items.length) return;
+        dt = Math.min(0.1, Math.max(0.001, dt));
+        for (const it of this.items) {
+            it.t += dt;
+            const k = Math.min(1, it.t / it.life);
+            const [sx, sy] = toScreen(it.x, it.y);
+            if (it.kind === 'spark') {
+                ctx.globalAlpha = 1 - k;
+                ctx.fillStyle = it.colour;
+                const sz = Math.max(1.5, zoom * 0.09);
+                ctx.fillRect(sx + it.vx * it.t * zoom - sz / 2, sy + it.vy * it.t * zoom - sz / 2 + 12 * it.t * it.t * zoom, sz, sz);
+            } else if (it.kind === 'ring') {
+                ctx.globalAlpha = (1 - k) * 0.9;
+                ctx.strokeStyle = it.colour;
+                ctx.lineWidth = Math.max(1.2, zoom * 0.06) * (1 - k * 0.6);
+                ctx.beginPath();
+                ctx.arc(sx, sy, (it.r0 + (it.r1 - it.r0) * k) * zoom * 0.12 + 4, 0, Math.PI * 2);
+                ctx.stroke();
+            } else if (it.kind === 'float') {
+                ctx.globalAlpha = 1 - k;
+                ctx.fillStyle = it.colour;
+                ctx.font = `bold ${Math.max(11, zoom * 0.5)}px system-ui, sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.fillText(it.text, sx, sy - 20 - k * 26);
+            }
+        }
+        ctx.globalAlpha = 1;
+        this.items = this.items.filter((it) => it.t < it.life);
+    }
+
+    // ---- audio: small synthesised blips, created on first user gesture ----
+    ensureAudio() {
+        if (this.audio || !this.enabled) return this.audio;
+        const AC = (typeof window !== 'undefined') && (window.AudioContext || window.webkitAudioContext);
+        if (!AC) return null;
+        try { this.audio = new AC(); } catch { this.audio = null; }
+        return this.audio;
+    }
+
+    play(kind, vol = 0.3) {
+        if (!this.enabled) return;
+        const ac = this.ensureAudio();
+        if (!ac || ac.state === 'suspended') return;
+        const now = ac.currentTime;
+        const o = ac.createOscillator();
+        const g = ac.createGain();
+        const table = {
+            hit: { type: 'square', f0: 320, f1: 160, dur: 0.08 },
+            capture: { type: 'triangle', f0: 520, f1: 780, dur: 0.12 },
+            upgrade: { type: 'sine', f0: 660, f1: 990, dur: 0.16 },
+            emp: { type: 'sawtooth', f0: 720, f1: 90, dur: 0.35 },
+            nuke: { type: 'sawtooth', f0: 180, f1: 40, dur: 0.7 },
+            ruler: { type: 'sine', f0: 440, f1: 110, dur: 0.8 },
+            loss: { type: 'sine', f0: 300, f1: 80, dur: 1.2 },
+        }[kind];
+        if (!table) return;
+        o.type = table.type;
+        o.frequency.setValueAtTime(table.f0, now);
+        o.frequency.exponentialRampToValueAtTime(Math.max(20, table.f1), now + table.dur);
+        g.gain.setValueAtTime(vol, now);
+        g.gain.exponentialRampToValueAtTime(0.001, now + table.dur);
+        o.connect(g).connect(ac.destination);
+        o.start(now);
+        o.stop(now + table.dur + 0.02);
+    }
+}
+
 // ---- app.js ----
 // SPDX-FileCopyrightText: 2026 Kiomet clone contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Game loop, input handling and DOM overlays (tower menu, alerts, leaderboard, dialogs).
+
+
 
 
 
@@ -2237,6 +2551,8 @@ class App {
         this.camera = this.renderer.camera;
         this.name = localStorage.getItem('kiomet-name') || 'Guesty';
         this.godMode = localStorage.getItem('kiomet-god') === '1';
+        // Fog of war (on by default, like the real game). B toggles it, as upstream cheats do.
+        this.fogEnabled = localStorage.getItem('kiomet-fog') !== '0';
         this.speed = 1;
         this.paused = false;
         this.selected = null;
@@ -2273,11 +2589,14 @@ class App {
         });
         game.players = [me, ...bots];
         game.onEvent = (e) => this.onGameEvent(e);
+        this.visibility = new Visibility();
+        this.effects = new Effects();
         this.game = game;
         game.spawnPlayer(me);
         for (const b of bots) {
             if (Math.random() < 0.75) game.spawnPlayer(b);
         }
+        if (this.effects) this.effects.clear();
         this.camera.x = 1280; this.camera.y = 1280; this.camera.zoom = 16;
         if (me.rulerKey != null) this.panToKey(me.rulerKey, false);
         this.selected = null;
@@ -2307,6 +2626,7 @@ class App {
             let steps = 0;
             while (this.acc >= 1 / TICK_HZ && steps < 8) {
                 this.game.tick();
+                this.visibility.invalidate();
                 this.acc -= 1 / TICK_HZ;
                 steps += 1;
             }
@@ -2314,16 +2634,32 @@ class App {
         this.handleKeyboardPan(dt);
         // Icon overlay follows the camera; refresh it every frame like the canvas.
         this.syncIcons();
+        this.updateVisibility();
         this.renderer.draw(this.game, {
             playerId: this.me.id,
             allies: this.me.allies,
             selected: this.selected,
             dragPath: this.dragPath,
             dragValid: this.dragValid,
+            fog: (t) => this.isVisible(t),
         });
+        this.effects.render(this.renderer.ctx, (x, y) => this.camera.toScreen(x, y, this.renderer.cw, this.renderer.ch), this.camera.zoom, dt);
         this.updateHud();
         if (this.selected) this.positionMenu();
         requestAnimationFrame((t) => this.frame(t));
+    }
+
+    // Fog of war is a player setting (default on, like the real game).
+    updateVisibility() {
+        const vis = this.visibility;
+        const allVisible = !this.fogEnabled || !this.me.alive;
+        vis.update(this.game, this.me.id, allVisible);
+        if (!allVisible) vis.addAllies(this.game, this.me.allies);
+    }
+
+    isVisible(t) {
+        if (!this.fogEnabled || !this.me.alive) return true;
+        return this.visibility.visible(t);
     }
 
     handleKeyboardPan(dt) {
@@ -2344,6 +2680,8 @@ class App {
         cv.addEventListener('contextmenu', (e) => e.preventDefault());
 
         cv.addEventListener('pointerdown', (e) => {
+            this.effects.ensureAudio();
+            if (this.effects.audio && this.effects.audio.state === 'suspended') this.effects.audio.resume();
             cv.setPointerCapture(e.pointerId);
             this.pointers = this.pointers || new Map();
             this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -2359,6 +2697,8 @@ class App {
             }
             const [wx, wy] = this.camera.toWorld(e.clientX, e.clientY, this.renderer.cw, this.renderer.ch);
             const t = this.towerAtWorld(wx, wy);
+            this.drag = null;
+            this.dragPath = null;
             if (t && t.owner === this.me.id) {
                 this.drag = { from: t, startX: e.clientX, startY: e.clientY, path: null, moved: false };
             }
@@ -2393,6 +2733,8 @@ class App {
         };
         cv.addEventListener('pointerup', end);
         cv.addEventListener('pointercancel', end);
+        cv.addEventListener('lostpointercapture', end);
+        addEventListener('pointerup', (e) => { if (this.drag) end(e); });
 
         cv.addEventListener('wheel', (e) => {
             e.preventDefault();
@@ -2417,6 +2759,7 @@ class App {
             if (k === 'q') { this.camera.zoom = Math.max(7, this.camera.zoom / 1.2); }
             if (k === 'e') { this.camera.zoom = Math.min(64, this.camera.zoom * 1.2); }
             if (k === 'r') this.showSupplyLines = !this.showSupplyLines;
+            if (k === 'b') this.toggleFog();
             if (k === ' ') { e.preventDefault(); this.togglePause(); }
         });
         addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
@@ -2636,6 +2979,7 @@ class App {
             const wp = integerPosition(t.x, t.y);
             const wx = wp[0], wy = wp[1];
             if (Math.abs(wx - this.camera.x) > padX || Math.abs(wy - this.camera.y) > padY) continue;
+            if (!this.isVisible(t)) continue;
             const k = t.y * 512 + t.x;
             seen.add(k);
             const [sx, sy] = this.camera.toScreen(wx, wy, cw, ch);
@@ -2703,6 +3047,20 @@ class App {
 
     // ---------------- alerts ----------------
     onGameEvent(e) {
+        // Battle feedback (particles + blips) for anything the player could plausibly see.
+        // Engine events carry either a tower id, a bare {x,y} cell, or a world position.
+        let pos = null, tower = null;
+        if (e.tower) {
+            tower = this.game.getTower(e.tower);
+            pos = tower ? integerPosition(tower.x, tower.y) : null;
+        } else if (e.pos) {
+            pos = e.pos;
+        }
+        // Only show feedback for things the player can actually see.
+        const visible = tower ? this.isVisible(tower)
+            : !this.fogEnabled || !this.me.alive || !pos ? true
+                : this.visibility.near(pos[0], pos[1], this.game);
+        if (pos && visible) this.effects.onEvent(e, pos);
         if (e.type === 'ruler' && e.player === this.me.id) {
             this.alerts.unshift({ text: 'Your King was killed!', sub: '', kind: 'bad', until: performance.now() + 8000 });
         }
@@ -2776,9 +3134,13 @@ class App {
             this.godMode = !this.godMode;
             localStorage.setItem('kiomet-god', this.godMode ? '1' : '0');
             D('god-btn').classList.toggle('active', this.godMode);
+        D('fog-btn').textContent = this.fogEnabled ? '迷雾:开' : '迷雾:关';
+        D('fog-btn').addEventListener('click', () => this.toggleFog());
             this.toast(this.godMode ? 'God mode on — your King cannot die' : 'God mode off');
         });
         D('god-btn').classList.toggle('active', this.godMode);
+        D('fog-btn').textContent = this.fogEnabled ? '迷雾:开' : '迷雾:关';
+        D('fog-btn').addEventListener('click', () => this.toggleFog());
         D('help-btn').addEventListener('click', () => this.openDialog('help'));
         D('towers-btn').addEventListener('click', () => this.openDialog('towers'));
         D('units-btn').addEventListener('click', () => this.openDialog('units'));
@@ -2790,6 +3152,15 @@ class App {
         D('name-input').value = this.name;
         setInterval(() => this.renderAlertList(), 500);
         this.toast('Click a tower for its menu · drag from your towers to send units · H finds your King');
+    }
+
+    toggleFog() {
+        this.fogEnabled = !this.fogEnabled;
+        localStorage.setItem('kiomet-fog', this.fogEnabled ? '1' : '0');
+        const btn = D('fog-btn');
+        if (btn) btn.textContent = this.fogEnabled ? '迷雾:开' : '迷雾:关';
+        this.visibility.invalidate();
+        this.updateVisibility();
     }
 
     togglePause() {

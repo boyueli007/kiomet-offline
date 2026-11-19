@@ -15,7 +15,8 @@ const FNV_PRIME = 16777619;
 
 function fnv(seed, bytes) {
     let h = seed >>> 0;
-    for (const b of bytes) {
+    for (let i = 0; i < bytes.length; i++) {
+        const b = bytes[i];
         h = Math.imul(h, FNV_PRIME) >>> 0;
         h = (h ^ b) >>> 0;
     }

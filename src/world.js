@@ -8,6 +8,7 @@
 import {
     TICK_HZ, UNITS, SHIELD, FIGHTER, SOLDIER, RULER, TOWER, SPAWNABLE, EMP_TICKS,
     isMobile, meetsPrereqs, isSingleUse, CHOPPER, TANK, BOMBER, RULER_MARCH_MULT,
+    MORALE_GEN_DIVISOR,
 } from './data.js';
 import {
     WORLD_SIZE, CENTER, neighbors, distanceSquared, connectivity, isSpawnablePosition,
@@ -17,6 +18,7 @@ import {
     Units, Force, Combatants, fight, ATTACKER, DEFENDER, forceSpeed, progressPerTick,
     progressRequired,
 } from './rules.js';
+import { TowerIndex, indexKey } from './towerindex.js';
 
 const key = (x, y) => y * WORLD_SIZE + x;
 export const kOf = (id) => key(id.x, id.y);
@@ -83,7 +85,7 @@ export class Player {
 export class Game {
     constructor(opts = {}) {
         this.time = 0;
-        this.towers = new Map();
+        this.towers = new TowerIndex();
         this.players = [];
         this.forces = [];
         this.events = [];
@@ -245,15 +247,8 @@ export class Game {
     sendForce(from, force) {
         force.host = null;
         // The King's high morale: forces leaving his tower (or a neighbour's) march slower.
-        if (from && from.owner != null) {
-            const p = this.players[from.owner];
-            if (p && p.rulerKey != null) {
-                const rk = p.rulerKey;
-                const king = this.towers.get(rk);
-                const dx = Math.abs(from.x - (rk % WORLD_SIZE));
-                const dy = Math.abs(from.y - Math.floor(rk / WORLD_SIZE));
-                if (king && (dx <= 1 && dy <= 1)) force.slow = RULER_MARCH_MULT;
-            }
+        if (from && from.owner != null && this.inMorale(from, from.owner)) {
+            force.slow = RULER_MARCH_MULT;
         }
         this.forces.push(force);
         from.outbound.push(force);
@@ -494,12 +489,18 @@ export class Game {
             t.delay -= 1;
         } else if (owner !== null) {
             const tt = TOWER[t.type];
+            // High morale: the King's tower and its eight neighbours produce twice as fast,
+            // which is the same as making two every period they would normally make one.
+            const morale = this.inMorale(t, owner) ? MORALE_GEN_DIVISOR : 1;
             for (const name in tt.gen) {
                 const u = tt.genUnitId(name);
-                if (tick % (tt.gen[name] * TICK_HZ) === 0) {
-                    const added = t.units.add(u, 2, t.type, false);
-                    t.units.subtract(u, Math.max(0, added - 1));
-                    if (isMobile(u, t.type) && added < 2) deploy = true;
+                const due = tick % (tt.gen[name] * TICK_HZ) === 0;
+                for (let rep = 0; due && rep < morale; rep++) {
+                    {
+                        const added = t.units.add(u, 2, t.type, false);
+                        t.units.subtract(u, Math.max(0, added - 1));
+                        if (isMobile(u, t.type) && added < 2) deploy = true;
+                    }
                 }
             }
         } else if (TOWER[t.type].down && tick % (60 * TICK_HZ) === 0) {
@@ -557,6 +558,16 @@ export class Game {
             });
         }
         if (t.flash > 0) t.flash -= 1;
+    }
+
+    // True when the tower sits at or next to its owner's King (Kiomet's "high morale").
+    inMorale(t, owner) {
+        const p = this.players[owner];
+        if (!p || p.rulerKey == null) return false;
+        const rk = p.rulerKey;
+        const king = this.towers.get(rk);
+        if (!king || king.owner !== owner) return false;
+        return Math.abs(t.x - (rk % WORLD_SIZE)) <= 1 && Math.abs(t.y - Math.floor(rk / WORLD_SIZE)) <= 1;
     }
 
     diminish(t) {

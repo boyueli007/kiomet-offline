@@ -12,6 +12,8 @@ import { Units } from './rules.js';
 import { Game, Player } from './world.js';
 import { botUpdate } from './bot.js';
 import { TOWER_SVG } from './glyphs.js';
+import { Visibility } from './fog.js';
+import { Effects } from './effects.js';
 import { Renderer, COLORS } from './render.js';
 
 const LABEL = {
@@ -34,6 +36,8 @@ export class App {
         this.camera = this.renderer.camera;
         this.name = localStorage.getItem('kiomet-name') || 'Guesty';
         this.godMode = localStorage.getItem('kiomet-god') === '1';
+        // Fog of war (on by default, like the real game). B toggles it, as upstream cheats do.
+        this.fogEnabled = localStorage.getItem('kiomet-fog') !== '0';
         this.speed = 1;
         this.paused = false;
         this.selected = null;
@@ -70,11 +74,14 @@ export class App {
         });
         game.players = [me, ...bots];
         game.onEvent = (e) => this.onGameEvent(e);
+        this.visibility = new Visibility();
+        this.effects = new Effects();
         this.game = game;
         game.spawnPlayer(me);
         for (const b of bots) {
             if (Math.random() < 0.75) game.spawnPlayer(b);
         }
+        if (this.effects) this.effects.clear();
         this.camera.x = 1280; this.camera.y = 1280; this.camera.zoom = 16;
         if (me.rulerKey != null) this.panToKey(me.rulerKey, false);
         this.selected = null;
@@ -104,6 +111,7 @@ export class App {
             let steps = 0;
             while (this.acc >= 1 / TICK_HZ && steps < 8) {
                 this.game.tick();
+                this.visibility.invalidate();
                 this.acc -= 1 / TICK_HZ;
                 steps += 1;
             }
@@ -111,16 +119,32 @@ export class App {
         this.handleKeyboardPan(dt);
         // Icon overlay follows the camera; refresh it every frame like the canvas.
         this.syncIcons();
+        this.updateVisibility();
         this.renderer.draw(this.game, {
             playerId: this.me.id,
             allies: this.me.allies,
             selected: this.selected,
             dragPath: this.dragPath,
             dragValid: this.dragValid,
+            fog: (t) => this.isVisible(t),
         });
+        this.effects.render(this.renderer.ctx, (x, y) => this.camera.toScreen(x, y, this.renderer.cw, this.renderer.ch), this.camera.zoom, dt);
         this.updateHud();
         if (this.selected) this.positionMenu();
         requestAnimationFrame((t) => this.frame(t));
+    }
+
+    // Fog of war is a player setting (default on, like the real game).
+    updateVisibility() {
+        const vis = this.visibility;
+        const allVisible = !this.fogEnabled || !this.me.alive;
+        vis.update(this.game, this.me.id, allVisible);
+        if (!allVisible) vis.addAllies(this.game, this.me.allies);
+    }
+
+    isVisible(t) {
+        if (!this.fogEnabled || !this.me.alive) return true;
+        return this.visibility.visible(t);
     }
 
     handleKeyboardPan(dt) {
@@ -141,6 +165,8 @@ export class App {
         cv.addEventListener('contextmenu', (e) => e.preventDefault());
 
         cv.addEventListener('pointerdown', (e) => {
+            this.effects.ensureAudio();
+            if (this.effects.audio && this.effects.audio.state === 'suspended') this.effects.audio.resume();
             cv.setPointerCapture(e.pointerId);
             this.pointers = this.pointers || new Map();
             this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -218,6 +244,7 @@ export class App {
             if (k === 'q') { this.camera.zoom = Math.max(7, this.camera.zoom / 1.2); }
             if (k === 'e') { this.camera.zoom = Math.min(64, this.camera.zoom * 1.2); }
             if (k === 'r') this.showSupplyLines = !this.showSupplyLines;
+            if (k === 'b') this.toggleFog();
             if (k === ' ') { e.preventDefault(); this.togglePause(); }
         });
         addEventListener('keyup', (e) => this.keys.delete(e.key.toLowerCase()));
@@ -437,6 +464,7 @@ export class App {
             const wp = integerPosition(t.x, t.y);
             const wx = wp[0], wy = wp[1];
             if (Math.abs(wx - this.camera.x) > padX || Math.abs(wy - this.camera.y) > padY) continue;
+            if (!this.isVisible(t)) continue;
             const k = t.y * 512 + t.x;
             seen.add(k);
             const [sx, sy] = this.camera.toScreen(wx, wy, cw, ch);
@@ -504,6 +532,20 @@ export class App {
 
     // ---------------- alerts ----------------
     onGameEvent(e) {
+        // Battle feedback (particles + blips) for anything the player could plausibly see.
+        // Engine events carry either a tower id, a bare {x,y} cell, or a world position.
+        let pos = null, tower = null;
+        if (e.tower) {
+            tower = this.game.getTower(e.tower);
+            pos = tower ? integerPosition(tower.x, tower.y) : null;
+        } else if (e.pos) {
+            pos = e.pos;
+        }
+        // Only show feedback for things the player can actually see.
+        const visible = tower ? this.isVisible(tower)
+            : !this.fogEnabled || !this.me.alive || !pos ? true
+                : this.visibility.near(pos[0], pos[1], this.game);
+        if (pos && visible) this.effects.onEvent(e, pos);
         if (e.type === 'ruler' && e.player === this.me.id) {
             this.alerts.unshift({ text: 'Your King was killed!', sub: '', kind: 'bad', until: performance.now() + 8000 });
         }
@@ -577,9 +619,13 @@ export class App {
             this.godMode = !this.godMode;
             localStorage.setItem('kiomet-god', this.godMode ? '1' : '0');
             D('god-btn').classList.toggle('active', this.godMode);
+        D('fog-btn').textContent = this.fogEnabled ? '迷雾:开' : '迷雾:关';
+        D('fog-btn').addEventListener('click', () => this.toggleFog());
             this.toast(this.godMode ? 'God mode on — your King cannot die' : 'God mode off');
         });
         D('god-btn').classList.toggle('active', this.godMode);
+        D('fog-btn').textContent = this.fogEnabled ? '迷雾:开' : '迷雾:关';
+        D('fog-btn').addEventListener('click', () => this.toggleFog());
         D('help-btn').addEventListener('click', () => this.openDialog('help'));
         D('towers-btn').addEventListener('click', () => this.openDialog('towers'));
         D('units-btn').addEventListener('click', () => this.openDialog('units'));
@@ -591,6 +637,15 @@ export class App {
         D('name-input').value = this.name;
         setInterval(() => this.renderAlertList(), 500);
         this.toast('Click a tower for its menu · drag from your towers to send units · H finds your King');
+    }
+
+    toggleFog() {
+        this.fogEnabled = !this.fogEnabled;
+        localStorage.setItem('kiomet-fog', this.fogEnabled ? '1' : '0');
+        const btn = D('fog-btn');
+        if (btn) btn.textContent = this.fogEnabled ? '迷雾:开' : '迷雾:关';
+        this.visibility.invalidate();
+        this.updateVisibility();
     }
 
     togglePause() {

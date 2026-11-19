@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 import {
     TOWERS, TOWER, UNITS, SHIELD, SOLDIER, TANK, NUKE, FIGHTER, RULER, CHOPPER,
-    TICK_HZ, SPAWNABLE, meetsPrereqs,
+    TICK_HZ, SPAWNABLE, meetsPrereqs, RULER_SHIELD_BOOST,
 } from '../src/data.js';
 import { Units, fight, Combatants, ATTACKER, forceSpeed, progressRequired } from '../src/rules.js';
 import { Game, Player } from '../src/world.js';
@@ -255,4 +255,101 @@ test('a supply line keeps producing even though its forces share the path', () =
     }
     assert.ok(captured, 'units arrived along the supply line');
     assert.ok(g.towers.get(key).owner === 0, 'source tower survived');
+});
+
+test('high morale: the King\'s tower and its neighbours produce twice as fast', () => {
+    const measure = (inBubble) => {
+        const g = new Game({ shrink: false });
+        const p = new Player(0, 'p');
+        g.players = [p];
+        g.spawnPlayer(p);
+        const king = g.towers.get(Number([...p.towers][0]));
+        let t = null;
+        if (inBubble) {
+            for (const nb of neighbors(king.x, king.y)) {
+                const c = g.getTower(nb);
+                if (c && !(c.x === king.x && c.y === king.y)) { t = c; break; }
+            }
+        } else {
+            for (const c of g.towers.values()) {
+                if (Math.max(Math.abs(c.x - king.x), Math.abs(c.y - king.y)) >= 4) { t = c; break; }
+            }
+        }
+        t.owner = 0; t.type = 'Armory'; t.delay = 0;
+        t.units = new Units();
+        t.supply = null; t.inbound.length = 0; t.outbound.length = 0;
+        p.towers.add(t.y * 512 + t.x);
+        for (let i = 0; i < 4 * 15; i++) g.tick();
+        return t.units.get(TANK);
+    };
+    assert.equal(measure(false), 1, 'a away-from-court Armory makes one tank per 15s');
+    assert.equal(measure(true), 2, 'the court makes two');
+});
+
+test('shields sit ten higher in the King\'s own tower', () => {
+    const g = new Game({ shrink: false });
+    const p = new Player(0, 'p');
+    g.players = [p];
+    g.spawnPlayer(p);
+    const king = g.towers.get(Number([...p.towers][0]));
+    king.type = 'Barracks';
+    king.units.reconcile('Barracks', true);
+    const plain = new Units();
+    plain.add(RULER, 1);
+    const base = plain.capacity(SHIELD, 'Barracks') - RULER_SHIELD_BOOST;
+    assert.equal(plain.capacity(SHIELD, 'Barracks'), TOWER.Barracks.rawCap(SHIELD) + RULER_SHIELD_BOOST);
+    assert.ok(king.units.capacity(SHIELD, king.type) > base);
+});
+
+test('fog: a tower sees its sensor radius and no further', async () => {
+    const { Visibility } = await import('../src/fog.js');
+    const g = new Game({ shrink: false });
+    const p = new Player(0, 'p');
+    g.players = [p];
+    g.spawnPlayer(p);
+    const king = g.towers.get(Number([...p.towers][0]));
+    const vis = new Visibility();
+    vis.invalidate();
+    vis.update(g, 0, false);
+    assert.ok(vis.visible(king), 'your own tower is visible');
+    // A tower outside every sensor is hidden, one inside a radar's reach is not.
+    let far = null;
+    for (const t of g.towers.values()) if (Math.abs(t.x - king.x) > 8 || Math.abs(t.y - king.y) > 8) far = t;
+    assert.equal(vis.visible(far), false, 'distant tower hidden');
+    king.type = 'Satellite';                 // sensor_radius 30 world units = 6 cells
+    vis.invalidate();
+    vis.update(g, 0, false);
+    const ring = g.getTower(neighbors(king.x, king.y).find((n) => Math.abs(n.x - king.x) <= 1) || { x: king.x + 1, y: king.y });
+    if (ring) assert.ok(vis.visible(ring), 'adjacent tower visible');
+    assert.equal(vis.visible(far), false, 'still hidden past the sensor');
+});
+
+test('fog: an upgrading tower sees no further than a mine', async () => {
+    const { Visibility } = await import('../src/fog.js');
+    const g = new Game({ shrink: false });
+    const p = new Player(0, 'p');
+    g.players = [p];
+    g.spawnPlayer(p);
+    const king = g.towers.get(Number([...p.towers][0]));
+    king.type = 'Satellite';
+    king.delay = 40;                          // mid-upgrade
+    const vis = new Visibility();
+    vis.invalidate();
+    vis.update(g, 0, false);
+    const probe = g.getTower({ x: king.x + 4, y: king.y }) || g.towers.values().next().value;
+    // 4 cells away is inside a satellite's 6, but outside a mine's 2.4
+    assert.equal(vis.radiusOf(king), TOWER.Mine.sensor / 5);
+});
+
+test('effects: events become particles that expire in real time', async () => {
+    const { Effects } = await import('../src/effects.js');
+    const fx = new Effects();
+    const ctx = new Proxy({}, { get: () => () => {}, set: () => true });
+    fx.onEvent({ type: 'nuke' }, [100, 100]);
+    assert.equal(fx.items.length, 2, 'a nuke spawns two rings');
+    fx.onEvent({ type: 'gained' }, [100, 100]);
+    assert.ok(fx.items.length > 2, 'a capture spawns sparks');
+    // at 10 fps a one second effect should be gone after ~10 frames
+    for (let i = 0; i < 15; i++) fx.render(ctx, (x, y) => [x, y], 20, 0.1);
+    assert.equal(fx.items.length, 0, 'particles expire');
 });

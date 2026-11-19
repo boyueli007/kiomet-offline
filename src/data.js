@@ -7,6 +7,10 @@
 export const TICK_HZ = 4;
 // Towers at or next to the King are high morale: same speed, but slower to leave.
 export const RULER_MARCH_MULT = 2;
+// High morale also means the King's tower and its eight neighbours make units and shields
+// twice as fast, and hold ten extra shields (Tower::RULER_SHIELD_BOOST upstream).
+export const MORALE_GEN_DIVISOR = 2;
+export const RULER_SHIELD_BOOST = 10;
 export const SHIELD = 0, FIGHTER = 1, CHOPPER = 2, BOMBER = 3, TANK = 4, SOLDIER = 5,
     SHELL = 6, EMP = 7, NUKE = 8, RULER = 9;
 

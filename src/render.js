@@ -59,6 +59,7 @@ export class Renderer {
 
     // Which towers should be drawn: everything within the view plus any owned tower.
     draw(game, view) {
+        this.fog = view && view.fog ? view.fog : null;
         const ctx = this.ctx;
         const { cw, ch } = this;
         ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -94,12 +95,14 @@ export class Renderer {
     }
 
     drawTerritory(ctx, game, visible) {
+        const fog = this.fog;
         const z = this.camera.zoom;
         const r = Math.max(12, z * 2.2);
         ctx.save();
         ctx.globalAlpha = 0.10;
         for (const t of visible) {
             if (t.owner == null) continue;
+            if (fog && !fog(t)) continue;
             const c = this.colorFor(game, t.owner, game.view);
             const [sx, sy] = this.camera.toScreen(integerPosition(t.x, t.y)[0], integerPosition(t.x, t.y)[1], this.cw, this.ch);
             const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
@@ -123,7 +126,9 @@ export class Renderer {
                 const kk = k1 < k2 ? k1 * 262144 + k2 : k2 * 262144 + k1;
                 if (seen.has(kk)) continue;
                 seen.add(kk);
-                if (!game.getTower(nb)) continue;
+                const other = game.getTower(nb);
+                if (!other) continue;
+                if (this.fog && !(this.fog(t) || this.fog(other))) continue;
                 const b = integerPosition(nb.x, nb.y);
                 const [x1, y1] = this.camera.toScreen(a[0], a[1], this.cw, this.ch);
                 const [x2, y2] = this.camera.toScreen(b[0], b[1], this.cw, this.ch);
@@ -178,6 +183,7 @@ export class Renderer {
         const z = this.camera.zoom;
         const size = Math.max(10, z * 1.25);
         for (const t of visible) {
+            if (this.fog && !this.fog(t)) continue;
             const a = integerPosition(t.x, t.y);
             const [sx, sy] = this.camera.toScreen(a[0], a[1], this.cw, this.ch);
             const c = this.colorFor(game, t.owner, view);
@@ -267,6 +273,9 @@ export class Renderer {
         const r = Math.max(3, z * 0.22);
         for (const f of game.forces) {
             if (f.idx >= f.path.length - 1) continue;   // already parked somewhere
+            if (this.fog && view && f.owner !== view.playerId &&
+                !(view.allies && view.allies.has(f.owner)) &&
+                !this.fog(f.source) && !this.fog(f.destination)) continue;
             const [wx, wy] = f.position(0);
             const [sx, sy] = this.camera.toScreen(wx, wy, this.cw, this.ch);
             if (sx < -40 || sy < -40 || sx > this.cw + 40 || sy > this.ch + 40) continue;

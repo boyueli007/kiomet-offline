@@ -2,7 +2,7 @@
 import fs from 'fs';
 
 const ROOT = new URL('.', import.meta.url).pathname;
-const mods = ['data.js', 'geom.js', 'rules.js', 'glyphs.js', 'world.js', 'bot.js', 'render.js', 'app.js'];
+const mods = ['data.js', 'geom.js', 'towerindex.js', 'rules.js', 'glyphs.js', 'fog.js', 'world.js', 'bot.js', 'render.js', 'effects.js', 'app.js'];
 const sources = {};
 for (const m of mods) sources[m] = fs.readFileSync(ROOT + 'src/' + m, 'utf8');
 

@@ -7,6 +7,7 @@
 import {
     UNITS, SHIELD, FIGHTER, CHOPPER, TANK, SOLDIER, EMP, NUKE, SHELL, RULER,
     field, damage, finiteDamage, isRanged, isSingleUse, isMobile, speed, TOWER,
+    RULER_SHIELD_BOOST,
 } from './data.js';
 import { distance, integerPosition } from './geom.js';
 
@@ -47,7 +48,7 @@ export class Units {
         // The world's own ruler slot: every tower type has capacity 1 for him.
         if (u === RULER) return towerType == null ? 255 : 1;
         const base = towerType == null ? 255
-            : TOWER[towerType].rawCap(u) + (u === SHIELD && this.hasRuler() ? 10 : 0);
+            : TOWER[towerType].rawCap(u) + (u === SHIELD && this.hasRuler() ? RULER_SHIELD_BOOST : 0);
         return Math.min(255, base);
     }
 

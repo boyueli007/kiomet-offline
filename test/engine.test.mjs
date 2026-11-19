@@ -353,3 +353,95 @@ test('effects: events become particles that expire in real time', async () => {
     for (let i = 0; i < 15; i++) fx.render(ctx, (x, y) => [x, y], 20, 0.1);
     assert.equal(fx.items.length, 0, 'particles expire');
 });
+
+test('alerts: tutorial nudges, then steps aside once you act', async () => {
+    const { AlertBoard } = await import('../src/alerts.js');
+    const g = new Game({ shrink: false });
+    const p = new Player(0, 'p');
+    g.players = [p];
+    g.spawnPlayer(p);
+    builderTower(g, p);                    // something to upgrade once the capture step is done
+    const board = new AlertBoard();
+    // At t=0 the board may already be warning about the King (his tower starts full of
+    // armed neighbours), but the tutorial itself must not nag before a few seconds.
+    assert.ok(!board.evaluate(g, p).some((a) => a.kind === 'capture'), 'no tutorial nag at t=0');
+    g.time = 4 * 20;
+    const list = board.evaluate(g, p);
+    assert.ok(list.some((a) => a.kind === 'capture'), 'capture tutorial appears');
+    board.onCapture();
+    g.time = 4 * 40;
+    assert.ok(board.evaluate(g, p).some((a) => a.kind === 'upgrade'), 'then the upgrade one');
+    board.onUpgrade();
+    assert.ok(!board.evaluate(g, p).some((a) => a.kind === 'upgrade'), 'and it stays gone');
+});
+
+test('alerts: a tower that fills up asks for a supply line', async () => {
+    const { AlertBoard } = await import('../src/alerts.js');
+    const g = new Game({ shrink: false });
+    const p = new Player(0, 'p');
+    g.players = [p];
+    g.spawnPlayer(p);
+    const t = builderTower(g, p);          // a plain tower (the spawn tower holds the King)
+    const cap = t.units.capacity(SOLDIER, 'Barracks');
+    t.units.add(SOLDIER, cap, 'Barracks', false);
+    const board = new AlertBoard();
+    const kinds = board.evaluate(g, p).map((a) => a.kind);
+    assert.ok(kinds.includes('full'), 'full tower reported: ' + kinds.join(','));
+    // overflow: more than capacity is only possible when units are circling
+    t.units.add(SOLDIER, 5, 'Barracks', true);
+    assert.ok(board.evaluate(g, p).some((a) => a.kind === 'overflow'), 'overflowing reported');
+});
+
+test('alerts: the King under attack outranks everything else', async () => {
+    const { AlertBoard } = await import('../src/alerts.js');
+    const g = new Game({ shrink: false });
+    const p = new Player(0, 'p');
+    g.players = [p];
+    g.spawnPlayer(p);
+    const king = g.towers.get(Number([...p.towers][0]));
+    king.units.subtract(SHIELD, 255);          // no shields left
+    // an enemy tower next door is what makes his position unsafe
+    const nb = neighbors(king.x, king.y).map((n) => g.getTower(n)).find(Boolean);
+    nb.owner = 1;
+    const board = new AlertBoard();
+    g.time = 4 * 30;
+    const kinds = board.evaluate(g, p).map((a) => a.kind);
+    assert.equal(kinds[0], 'rulerUnsafe', 'King safety is announced: ' + kinds.join(','));
+
+    // with shields back and no enemy touching him, the warning goes away
+    king.units.add(SHIELD, 30, king.type, true);
+    nb.owner = null;
+    assert.ok(!board.evaluate(g, p).some((a) => a.kind === 'rulerUnsafe'), 'safe again');
+});
+
+test('alerts: zombies touching your land are announced', async () => {
+    const { AlertBoard } = await import('../src/alerts.js');
+    const g = new Game({ shrink: false });
+    const p = new Player(0, 'p');
+    g.players = [p];
+    g.spawnPlayer(p);
+    const t = builderTower(g, p);
+    t.inbound.push({ owner: null, units: new Units(), path: [t.id, t.id], idx: 0 });
+    const board = new AlertBoard();
+    assert.ok(board.evaluate(g, p).some((a) => a.kind === 'zombies'), 'zombies reported');
+});
+
+test('capture chime only fires when you take a tower from someone else', () => {
+    const g = new Game({ shrink: false });
+    const events = [];
+    g.onEvent = (e) => events.push(e);
+    const p = new Player(0, 'p');
+    g.players = [p];
+    g.spawnPlayer(p);
+    const src = builderTower(g, p);
+    // an enemy-owned neighbour with a weak garrison
+    const nb = neighbors(src.x, src.y).map((n) => g.getTower(n)).find(Boolean);
+    nb.owner = 1;
+    nb.units.reconcile(nb.type, true);
+    nb.units.add(SHIELD, 2, nb.type, true);
+    assert.equal(g.deploy(0, src.id, [src.id, nb.id]), null);
+    for (let i = 0; i < 4 * 30; i++) g.tick();
+    const gained = events.filter((e) => e.type === 'gained' && e.player === 0);
+    assert.ok(gained.length >= 1, 'captured something');
+    assert.ok(gained.some((e) => e.capturedFrom === 1), 'capture records who lost it');
+});

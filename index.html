@@ -18,19 +18,30 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   font:14px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft Yahei",sans-serif;
   user-select:none;-webkit-user-select:none}
 #app{position:absolute;inset:0;z-index:0}
-#topbar,#leaderboard,#alerts,#chat,#controls,#zoomctl,#tower-menu,#spawn,#dialog{position:absolute;z-index:2}
+#game-alerts,#topbar,#leaderboard,#alerts,#chat,#controls,#zoomctl,#tower-menu,#spawn,#dialog{position:absolute;z-index:2}
 #icons{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:1}
 .tico{position:absolute;will-change:left,top;filter:drop-shadow(0 1px 1px #0008)}
 #canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;z-index:0}
 .hidden{display:none!important}
 
 /* top bar */
-#topbar{position:absolute;left:0;right:0;top:0;display:flex;justify-content:center;gap:1.5rem;
-  padding:.4rem .75rem;pointer-events:none;font-size:.85rem;color:#cfd8e3}
+#topbar{position:absolute;left:50%;bottom:.5rem;transform:translateX(-50%);display:flex;justify-content:center;
+  gap:.6rem;pointer-events:none;font-size:.8rem;color:#cfd8e3;opacity:.85}
 #topbar .stat{background:var(--panel);border-radius:.35rem;padding:.2rem .55rem;pointer-events:auto}
 #topbar b{color:#fff;font-size:.95rem}
 
 /* leaderboard */
+#game-alerts{position:absolute;left:.6rem;top:2.9rem;display:flex;flex-direction:column;gap:.3rem;
+  max-width:min(24rem, 60vw);z-index:2}
+.galert{display:flex;align-items:flex-start;gap:.4rem;background:#0f1416cc;border-left:3px solid var(--blue);
+  border-radius:.3rem;padding:.35rem .5rem;font-size:.8rem;cursor:pointer}
+.galert.rulerAttack,.galert.rulerUnsafe{border-left-color:var(--red)}
+.galert.overflow,.galert.zombies{border-left-color:var(--gold)}
+.galert-main{font-weight:600}
+.galert-sub{opacity:.7;font-size:.74rem;line-height:1.3}
+.galert-x{margin-left:auto;opacity:.5;padding-left:.4rem}
+.galert-x:hover{opacity:1}
+#alerts{top:auto;bottom:11.5rem;max-width:22rem}
 #leaderboard{position:absolute;right:.6rem;top:.6rem;min-width:11rem;max-width:24vw;
   background:var(--panel);border-radius:.4rem;padding:.35rem .5rem;font-size:.8rem;backdrop-filter:blur(2px)}
 .lb-head{font-weight:600;opacity:.85;margin-bottom:.2rem;font-size:.78rem}
@@ -43,8 +54,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 .lb-foot{margin-top:.25rem;opacity:.5;font-size:.72rem}
 
 /* alerts */
-#alerts{position:absolute;left:.6rem;top:.6rem;display:flex;flex-direction:column;gap:.3rem;
-  max-width:25%;pointer-events:none}
+#alerts{position:absolute;left:.6rem;display:flex;flex-direction:column;gap:.3rem;
+  pointer-events:none}
 .alert{display:flex;align-items:center;gap:.4rem;background:var(--panel);border-radius:.35rem;
   padding:.3rem .45rem;font-size:.8rem;pointer-events:auto}
 .alert.bad{background:#c0392b55}
@@ -143,6 +154,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 
 /* small screens */
 @media (max-width:720px){
+  #game-alerts{max-width:70vw;font-size:.74rem}
   #leaderboard{font-size:.72rem;min-width:8.5rem}
   #chat{width:14rem}
   #chat-log{max-height:5rem}
@@ -162,6 +174,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
     <div class="stat">生命 <b id="alive-dot" class="dot"></b></div>
   </div>
 
+  <div id="game-alerts"></div>
   <div id="alerts"></div>
   <div id="leaderboard"></div>
 
@@ -208,15 +221,6 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   </div>
 </div>
 
-<script>
-// Fallback splash while the module graph loads.
-window.addEventListener('error', (e) => {
-  const d = document.createElement('div');
-  d.style.cssText = 'position:fixed;left:8px;bottom:8px;right:8px;background:#7f1d1d;color:#fff;padding:8px;border-radius:6px;font:12px monospace;z-index:999';
-  d.textContent = 'Error: ' + (e.message || e.error);
-  document.body.appendChild(d);
-});
-</script>
 <script type="module">
   import { App } from './src/app.js';
   // One shared instance; expose it for debugging from the console.

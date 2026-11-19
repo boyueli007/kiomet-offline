@@ -1,6 +1,6 @@
 {
   "name": "kiomet-offline",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Offline single-file clone of kiomet.com, ported from the AGPL-licensed upstream source",
   "type": "module",
   "license": "AGPL-3.0-or-later",

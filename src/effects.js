@@ -22,38 +22,44 @@ export class Effects {
         switch (e.type) {
             case 'shell':
                 this.ring(x, y, 10, 26, '#ffb347', 420);
-                this.play('hit', 0.35);
+                this.play('hit', 0.35, x, y);
                 break;
             case 'emp':
                 this.ring(x, y, 6, 46, '#4cc9f0', 700);
-                this.play('emp', 0.5);
+                this.play('emp', 0.5, x, y);
                 break;
             case 'nuke':
                 this.ring(x, y, 8, 90, '#ff5a5a', 900);
                 this.ring(x, y, 4, 60, '#ffd166', 650);
-                this.play('nuke', 0.6);
+                this.play('nuke', 0.6, x, y);
                 break;
             case 'ruler':
                 this.ring(x, y, 6, 50, '#ffd166', 900);
-                this.play('ruler', 0.7);
+                this.play('ruler', 0.7, x, y);
                 this.float(x, y, 'King lost!', '#ffd166', 1400);
                 break;
             case 'gained':
                 this.spark(x, y, 7, '#8fd3ff');
-                this.play('capture', 0.18);
+                // Kiomet only chimes when *you* capture a tower from someone else.
+                if (this.meId != null && e.player === this.meId && e.capturedFrom != null) {
+                    this.play('capture', 0.18, x, y);
+                }
                 break;
             case 'lostTower':
                 this.spark(x, y, 5, '#ff8f7a');
+                // ... and only wails when *you* lose one.
+                if (this.meId != null && e.player === this.meId) this.play('loss', 0.5, x, y);
                 break;
             case 'lostForce':
                 this.spark(x, y, 4, '#cfcfcf');
+                if (this.meId != null && e.player === this.meId) this.play('pain', 0.4, x, y);
                 break;
             case 'died':
-                this.play('loss', 0.5);
+                this.play('loss', 0.5, x, y);
                 break;
             case 'upgrade':
                 this.ring(x, y, 4, 22, '#ffffff', 400);
-                this.play('upgrade', 0.2);
+                this.play('upgrade', 0.2, x, y);
                 break;
             default:
                 break;
@@ -122,10 +128,22 @@ export class Effects {
         return this.audio;
     }
 
-    play(kind, vol = 0.3) {
+    // `at` = world position: the real client scales volume by distance from the camera
+    // (1 / (1 + distance)) and we add a small per-sound rate limit.
+    play(kind, vol = 0.3, at) {
         if (!this.enabled) return;
         const ac = this.ensureAudio();
         if (!ac || ac.state === 'suspended') return;
+        if (at && Array.isArray(at) && this.cameraAt) {
+            const d = Math.hypot(at[0] - this.cameraAt[0], at[1] - this.cameraAt[1]) / 120;
+            vol *= 1 / (1 + d);
+        }
+        vol = Math.max(0, Math.min(1, Number.isFinite(vol) ? vol : 0.2));
+        if (vol < 0.02) return;
+        const now0 = performance.now();
+        this.lastPlay = this.lastPlay || new Map();
+        if (now0 - (this.lastPlay.get(kind) || 0) < 90) return;
+        this.lastPlay.set(kind, now0);
         const now = ac.currentTime;
         const o = ac.createOscillator();
         const g = ac.createGain();
@@ -137,6 +155,7 @@ export class Effects {
             nuke: { type: 'sawtooth', f0: 180, f1: 40, dur: 0.7 },
             ruler: { type: 'sine', f0: 440, f1: 110, dur: 0.8 },
             loss: { type: 'sine', f0: 300, f1: 80, dur: 1.2 },
+            pain: { type: 'triangle', f0: 240, f1: 120, dur: 0.25 },
         }[kind];
         if (!table) return;
         o.type = table.type;

@@ -18,19 +18,30 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
   font:14px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft Yahei",sans-serif;
   user-select:none;-webkit-user-select:none}
 #app{position:absolute;inset:0;z-index:0}
-#topbar,#leaderboard,#alerts,#chat,#controls,#zoomctl,#tower-menu,#spawn,#dialog{position:absolute;z-index:2}
+#game-alerts,#topbar,#leaderboard,#alerts,#chat,#controls,#zoomctl,#tower-menu,#spawn,#dialog{position:absolute;z-index:2}
 #icons{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:1}
 .tico{position:absolute;will-change:left,top;filter:drop-shadow(0 1px 1px #0008)}
 #canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;z-index:0}
 .hidden{display:none!important}
 
 /* top bar */
-#topbar{position:absolute;left:0;right:0;top:0;display:flex;justify-content:center;gap:1.5rem;
-  padding:.4rem .75rem;pointer-events:none;font-size:.85rem;color:#cfd8e3}
+#topbar{position:absolute;left:50%;bottom:.5rem;transform:translateX(-50%);display:flex;justify-content:center;
+  gap:.6rem;pointer-events:none;font-size:.8rem;color:#cfd8e3;opacity:.85}
 #topbar .stat{background:var(--panel);border-radius:.35rem;padding:.2rem .55rem;pointer-events:auto}
 #topbar b{color:#fff;font-size:.95rem}
 
 /* leaderboard */
+#game-alerts{position:absolute;left:.6rem;top:2.9rem;display:flex;flex-direction:column;gap:.3rem;
+  max-width:min(24rem, 60vw);z-index:2}
+.galert{display:flex;align-items:flex-start;gap:.4rem;background:#0f1416cc;border-left:3px solid var(--blue);
+  border-radius:.3rem;padding:.35rem .5rem;font-size:.8rem;cursor:pointer}
+.galert.rulerAttack,.galert.rulerUnsafe{border-left-color:var(--red)}
+.galert.overflow,.galert.zombies{border-left-color:var(--gold)}
+.galert-main{font-weight:600}
+.galert-sub{opacity:.7;font-size:.74rem;line-height:1.3}
+.galert-x{margin-left:auto;opacity:.5;padding-left:.4rem}
+.galert-x:hover{opacity:1}
+#alerts{top:auto;bottom:11.5rem;max-width:22rem}
 #leaderboard{position:absolute;right:.6rem;top:.6rem;min-width:11rem;max-width:24vw;
   background:var(--panel);border-radius:.4rem;padding:.35rem .5rem;font-size:.8rem;backdrop-filter:blur(2px)}
 .lb-head{font-weight:600;opacity:.85;margin-bottom:.2rem;font-size:.78rem}
@@ -43,8 +54,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 .lb-foot{margin-top:.25rem;opacity:.5;font-size:.72rem}
 
 /* alerts */
-#alerts{position:absolute;left:.6rem;top:.6rem;display:flex;flex-direction:column;gap:.3rem;
-  max-width:25%;pointer-events:none}
+#alerts{position:absolute;left:.6rem;display:flex;flex-direction:column;gap:.3rem;
+  pointer-events:none}
 .alert{display:flex;align-items:center;gap:.4rem;background:var(--panel);border-radius:.35rem;
   padding:.3rem .45rem;font-size:.8rem;pointer-events:auto}
 .alert.bad{background:#c0392b55}
@@ -143,6 +154,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
 
 /* small screens */
 @media (max-width:720px){
+  #game-alerts{max-width:70vw;font-size:.74rem}
   #leaderboard{font-size:.72rem;min-width:8.5rem}
   #chat{width:14rem}
   #chat-log{max-height:5rem}
@@ -162,6 +174,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--
     <div class="stat">生命 <b id="alive-dot" class="dot"></b></div>
   </div>
 
+  <div id="game-alerts"></div>
   <div id="alerts"></div>
   <div id="leaderboard"></div>
 
@@ -1706,7 +1719,9 @@ class Game {
                 if (winner !== DEFENDER) {
                     if (tp !== null) this.info({ type: 'lostTower', tower: id, player: tp });
                     const newOwner = (winner === ATTACKER && fp !== null) ? fp : null;
-                    if (newOwner !== null) this.info({ type: 'gained', tower: id, player: newOwner });
+                    if (newOwner !== null) {
+                        this.info({ type: 'gained', tower: id, player: newOwner, capturedFrom: tp });
+                    }
                     if (tp !== null || newOwner !== null) t.setOwner(newOwner);
                     if (t.owner === null) {
                         while (TOWER[t.type].down) t.type = TOWER[t.type].down;
@@ -2066,6 +2081,7 @@ class Renderer {
         this.camera = new Camera();
         // SvgColor: each glyph stroked in its owner's colour, cached per colour.
         this.glyphCache = new Map();
+        this.unitCache = new Map();
         this.dpr = Math.min(2, window.devicePixelRatio || 1);
         this.resize();
     }
@@ -2103,6 +2119,7 @@ class Renderer {
         this.drawRoads(ctx, game, visible);
         this.drawPaths(ctx, game, view);
         this.drawTowers(ctx, game, visible, view);
+        this.drawMarkers(ctx, game, view);
         this.drawForces(ctx, game, view);
         this.drawSelection(ctx, game, view);
     }
@@ -2274,17 +2291,76 @@ class Renderer {
         }
         const rest = counts.filter(([u]) => u !== SHIELD);
         if (!rest.length) return;
+        // Kiomet draws a tiny formation of unit glyphs under the tower; we do the same when
+        // there is room, and fall back to colour pips when zoomed far out.
         const total = rest.reduce((n, [, c]) => n + c, 0);
-        const maxBar = size * 1.05;
-        const w = Math.min(maxBar, Math.max(size * 0.16, Math.sqrt(total) * size * 0.10));
-        let x = cx - w / 2;
-        const y = cy + size * 0.10;
-        const h = Math.max(2, size * 0.10);
-        for (const [u, c] of rest) {
-            const frac = c / total;
-            ctx.fillStyle = UNIT_TINT[u] || '#dfe6ee';
-            ctx.fillRect(x, y, Math.max(1.5, w * frac - 1), h);
-            x += w * frac;
+        const maxPips = 9;
+        const pip = size * 0.22;
+        const rows = Math.min(3, Math.ceil(Math.min(total, maxPips) / 3));
+        const shown = Math.min(total, maxPips);
+        const ox = cx, oy = cy + size * 0.02;
+        const colour = this.shade(this.colorFor(null, null, null), 1);
+        if (size >= 26 && shown <= 8) {
+            let left = shown, i = 0;
+            // A faint dark halo keeps the pale glyphs readable on the dark plinth.
+            ctx.save();
+            ctx.shadowColor = 'rgba(0,0,0,0.85)';
+            ctx.shadowBlur = Math.max(2, pip * 0.35);
+            for (const [u, c] of rest) {
+                let count = c;
+                while (count > 0 && left > 0) {
+                    const col = i % 3, row = Math.floor(i / 3);
+                    const x = ox + (col - 1) * pip * 0.95;
+                    const y = oy + row * pip * 0.78;
+                    const img = this.unitGlyph(UNITS[u].name, UNIT_TINT_RGB[u] || [200, 210, 228]);
+                    if (img.complete && img.naturalWidth) {
+                        ctx.drawImage(img, x - pip / 2, y - pip / 2, pip, pip);
+                    }
+                    count -= 1; left -= 1; i += 1;
+                }
+            }
+            ctx.restore();
+        } else {
+            const maxBar = size * 1.05;
+            const w = Math.min(maxBar, Math.max(size * 0.16, Math.sqrt(total) * size * 0.10));
+            let x = cx - w / 2;
+            const y = cy + size * 0.10;
+            const h = Math.max(2, size * 0.10);
+            for (const [u, c] of rest) {
+                const frac = c / total;
+                ctx.fillStyle = UNIT_TINT[u] || '#dfe6ee';
+                ctx.fillRect(x, y, Math.max(1.5, w * frac - 1), h);
+                x += w * frac;
+            }
+        }
+    }
+
+    // Kiomet's "T" marker: a small diamond bobbing over every tower of the selected kind,
+    // drawn whenever `view.markType` matches (the app sets it while T is held).
+    drawMarkers(ctx, game, view) {
+        if (!view || !view.markType) return;
+        const z = this.camera.zoom;
+        const scale = Math.max(2, z * 0.025);
+        const bob = Math.abs(Math.sin((performance.now() / 1000) * Math.PI));
+        for (const t of game.towers.values()) {
+            if (t.type !== view.markType) continue;
+            if (this.fog && !this.fog(t)) continue;
+            const a = integerPosition(t.x, t.y);
+            const [sx, sy] = this.camera.toScreen(a[0], a[1], this.cw, this.ch);
+            if (sx < -20 || sy < -20 || sx > this.cw + 20 || sy > this.ch + 20) continue;
+            const y = sy - z * 0.95 - scale * (0.45 + bob * 0.12);
+            const w = scale * 0.9, h = scale * 1.2;
+            ctx.beginPath();
+            ctx.moveTo(sx, y - h / 2);
+            ctx.lineTo(sx + w, y);
+            ctx.lineTo(sx, y + h / 2);
+            ctx.lineTo(sx - w, y);
+            ctx.closePath();
+            ctx.fillStyle = `rgba(255,255,255,${0.55 + bob * 0.35})`;
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
         }
     }
 
@@ -2307,6 +2383,15 @@ class Renderer {
             ctx.strokeStyle = 'rgba(0,0,0,0.35)';
             ctx.lineWidth = 1;
             ctx.stroke();
+            // The lead unit's glyph on the marker, like the real game's marching columns.
+            if (z > 15) {
+                const lead = f.units.counts().filter(([u]) => u !== SHIELD).sort((a, b) => b[1] - a[1])[0];
+                if (lead) {
+                    const img = this.unitGlyph(UNITS[lead[0]].name, [235, 242, 250]);
+                    const gs = r * 1.7;
+                    if (img.complete && img.naturalWidth) ctx.drawImage(img, sx - gs / 2, sy - gs / 2, gs, gs);
+                }
+            }
             if (z > 13) {
                 const n = f.units.counts().reduce((s, [, c2]) => s + c2, 0);
                 ctx.fillStyle = 'rgba(20,24,26,0.85)';
@@ -2347,10 +2432,36 @@ class Renderer {
         return img;
     }
 
+    // Unit glyph, stroked in `color` (the same shapes the real game draws next to towers).
+    unitGlyph(name, color) {
+        const key = name + ':' + color.join(',');
+        let img = this.unitCache.get(key);
+        if (!img) {
+            const svg = (UNIT_SVG[name] || '')
+                .replace(/stroke="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?"/g, `stroke="rgb(${color.join(',')})"`);
+            img = new Image();
+            img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
+            this.unitCache.set(key, img);
+        }
+        return img;
+    }
+
     shade(c, k) {
         return [c[0], c[1], c[2]].map((v) => Math.max(0, Math.min(255, Math.round(v * k)))).join(',');
     }
 }
+
+const UNIT_TINT_RGB = {
+    [UNIT_ID.Fighter]: [127, 209, 255],
+    [UNIT_ID.Chopper]: [155, 225, 93],
+    [UNIT_ID.Bomber]: [255, 209, 102],
+    [UNIT_ID.Tank]: [242, 166, 90],
+    [UNIT_ID.Soldier]: [232, 238, 246],
+    [UNIT_ID.Shell]: [255, 159, 28],
+    [UNIT_ID.Emp]: [76, 201, 240],
+    [UNIT_ID.Nuke]: [255, 77, 77],
+    [UNIT_ID.Ruler]: [255, 215, 0],
+};
 
 const UNIT_TINT = {
     [UNIT_ID.Fighter]: '#7fd1ff',
@@ -2388,38 +2499,44 @@ class Effects {
         switch (e.type) {
             case 'shell':
                 this.ring(x, y, 10, 26, '#ffb347', 420);
-                this.play('hit', 0.35);
+                this.play('hit', 0.35, x, y);
                 break;
             case 'emp':
                 this.ring(x, y, 6, 46, '#4cc9f0', 700);
-                this.play('emp', 0.5);
+                this.play('emp', 0.5, x, y);
                 break;
             case 'nuke':
                 this.ring(x, y, 8, 90, '#ff5a5a', 900);
                 this.ring(x, y, 4, 60, '#ffd166', 650);
-                this.play('nuke', 0.6);
+                this.play('nuke', 0.6, x, y);
                 break;
             case 'ruler':
                 this.ring(x, y, 6, 50, '#ffd166', 900);
-                this.play('ruler', 0.7);
+                this.play('ruler', 0.7, x, y);
                 this.float(x, y, 'King lost!', '#ffd166', 1400);
                 break;
             case 'gained':
                 this.spark(x, y, 7, '#8fd3ff');
-                this.play('capture', 0.18);
+                // Kiomet only chimes when *you* capture a tower from someone else.
+                if (this.meId != null && e.player === this.meId && e.capturedFrom != null) {
+                    this.play('capture', 0.18, x, y);
+                }
                 break;
             case 'lostTower':
                 this.spark(x, y, 5, '#ff8f7a');
+                // ... and only wails when *you* lose one.
+                if (this.meId != null && e.player === this.meId) this.play('loss', 0.5, x, y);
                 break;
             case 'lostForce':
                 this.spark(x, y, 4, '#cfcfcf');
+                if (this.meId != null && e.player === this.meId) this.play('pain', 0.4, x, y);
                 break;
             case 'died':
-                this.play('loss', 0.5);
+                this.play('loss', 0.5, x, y);
                 break;
             case 'upgrade':
                 this.ring(x, y, 4, 22, '#ffffff', 400);
-                this.play('upgrade', 0.2);
+                this.play('upgrade', 0.2, x, y);
                 break;
             default:
                 break;
@@ -2488,10 +2605,22 @@ class Effects {
         return this.audio;
     }
 
-    play(kind, vol = 0.3) {
+    // `at` = world position: the real client scales volume by distance from the camera
+    // (1 / (1 + distance)) and we add a small per-sound rate limit.
+    play(kind, vol = 0.3, at) {
         if (!this.enabled) return;
         const ac = this.ensureAudio();
         if (!ac || ac.state === 'suspended') return;
+        if (at && Array.isArray(at) && this.cameraAt) {
+            const d = Math.hypot(at[0] - this.cameraAt[0], at[1] - this.cameraAt[1]) / 120;
+            vol *= 1 / (1 + d);
+        }
+        vol = Math.max(0, Math.min(1, Number.isFinite(vol) ? vol : 0.2));
+        if (vol < 0.02) return;
+        const now0 = performance.now();
+        this.lastPlay = this.lastPlay || new Map();
+        if (now0 - (this.lastPlay.get(kind) || 0) < 90) return;
+        this.lastPlay.set(kind, now0);
         const now = ac.currentTime;
         const o = ac.createOscillator();
         const g = ac.createGain();
@@ -2503,6 +2632,7 @@ class Effects {
             nuke: { type: 'sawtooth', f0: 180, f1: 40, dur: 0.7 },
             ruler: { type: 'sine', f0: 440, f1: 110, dur: 0.8 },
             loss: { type: 'sine', f0: 300, f1: 80, dur: 1.2 },
+            pain: { type: 'triangle', f0: 240, f1: 120, dur: 0.25 },
         }[kind];
         if (!table) return;
         o.type = table.type;
@@ -2516,11 +2646,135 @@ class Effects {
     }
 }
 
+// ---- alerts.js ----
+// SPDX-FileCopyrightText: 2026 Kiomet clone contributors
+// SPDX-License-Identifier: AGPL-3.0-or-later
+//
+// The alerts the real game shows at the top of the screen, ported from
+// common/src/alerts.rs and client/src/ui/alert_overlay.rs:
+//   * your King is unsafe / under attack (takes priority)
+//   * the opening tutorial (capture a tower, then upgrade one)
+//   * a tower is full / overflowing
+//   * zombies are attacking
+// Each one carries a tower so clicking it can jump there.
+
+
+const ALERT_TEXT = {
+    rulerAttack: ['Your King is under attack!', 'If they die, you lose the game'],
+    rulerUnsafe: ['Move your King to safety',
+        'Shielded Headquarters or Bunkers near the center of your territory provide the most protection'],
+    capture: ['Capture more towers', 'Drag units from your towers to outside your borders'],
+    upgrade: ['Upgrade a tower', 'Click a tower to show upgrade options'],
+    full: ['A tower is full', 'Drag away units to make room for more'],
+    overflow: ['A tower is overflowing', 'Drag away units to stop them from disappearing'],
+    zombies: ['Zombies sighted', 'Escape them by moving in the opposite direction'],
+};
+
+class AlertBoard {
+    constructor() {
+        this.tutorial = 'capture';        // 'capture' | 'upgrade' | 'done'
+        this.dismissed = new Set();       // one-shot dismissals for this run
+        this.zombieSeen = false;
+        this.last = [];
+    }
+
+    reset() {
+        this.tutorial = 'capture';
+        this.dismissed.clear();
+        this.zombieSeen = false;
+        this.last = [];
+    }
+
+    dismiss(kind) { this.dismissed.add(kind); }
+
+    // Recompute every second, exactly like the server does for Alerts.
+    evaluate(game, me) {
+        const out = [];
+        if (!me.alive) { this.last = out; return out; }
+
+        const mine = [...me.towers].map((k) => game.towers.get(k)).filter((t) => t && t.owner === me.id);
+        const king = mine.find((t) => t.units.hasRuler());
+        const ks = king ? { x: king.x, y: king.y } : null;
+
+        if (king) {
+            const incoming = king.inbound.filter((f) => f.owner !== me.id &&
+                game.relationship(me.id, f.owner) === 'enemy');
+            const shields = king.units.get(SHIELD);
+            const need = TOWER[king.type].maxRangedDamage();
+            // Kiomet treats a missing tower or an enemy tower as unsafe; empty (neutral)
+            // towers don't count against you.
+            const neighboursOwned = [...neighborsOf(king)].every((n) => {
+                const t = game.getTower(n);
+                return !t || t.owner == null || t.owner === me.id;
+            });
+            const safe = (shields >= need || neighboursOwned) &&
+                !incoming.some((f) => f.owner !== me.id);
+            if (incoming.length && !safe) {
+                out.push(this.item('rulerAttack', ks));
+            } else if (!safe && !this.dismissed.has('rulerUnsafe')) {
+                out.push(this.item('rulerUnsafe', ks));
+            }
+        }
+
+        // Tutorial: nudge after a few seconds if the player hasn't done it yet.
+        if (this.tutorial !== 'done' && game.time > 12 && !this.dismissed.has(this.tutorial)) {
+            const target = this.tutorial === 'capture'
+                ? (mine[0] || null)
+                : (mine.find((t) => t.active && TOWER[t.type].upgrades.length) || null);
+            if (target) out.push(this.item(this.tutorial, { x: target.x, y: target.y }));
+        }
+
+        const { full, overflow, zombie } = this.health(game, mine);
+        if (full && !this.dismissed.has('full')) out.push(this.item('full', full));
+        if (overflow && !this.dismissed.has('overflow')) out.push(this.item('overflow', overflow));
+        if (zombie && !this.dismissed.has('zombies')) out.push(this.item('zombies', zombie));
+
+        this.last = out;
+        return out;
+    }
+
+    item(kind, tower) {
+        const [title, hint] = ALERT_TEXT[kind];
+        return { kind, title, hint, tower };
+    }
+
+    // "A tower is full / overflowing" + "zombies are attacking this tower".
+    health(game, mine) {
+        let full = null, overflow = null, zombie = null;
+        for (const t of mine) {
+            if (!t.active) continue;
+            for (const [u, c] of t.units.counts()) {
+                if (!isMobile(u, t.type)) continue;
+                const cap = t.units.capacity(u, t.type);
+                const generates = TOWER[t.type].genPeriod(u) != null;
+                if (c > cap) overflow = overflow || { x: t.x, y: t.y };
+                else if (c === cap && generates && !t.supply) full = full || { x: t.x, y: t.y };
+            }
+            if (!zombie && t.inbound.some((f) => f.owner === null)) zombie = { x: t.x, y: t.y };
+        }
+        return { full, overflow, zombie };
+    }
+
+    // Called by the app when the player actually does the tutorial step.
+    onCapture() { if (this.tutorial === 'capture') this.tutorial = 'upgrade'; }
+    onUpgrade() { if (this.tutorial === 'upgrade') this.tutorial = 'done'; }
+}
+
+function* neighborsOf(t) {
+    for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+            if (!dx && !dy) continue;
+            yield { x: t.x + dx, y: t.y + dy };
+        }
+    }
+}
+
 // ---- app.js ----
 // SPDX-FileCopyrightText: 2026 Kiomet clone contributors
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // Game loop, input handling and DOM overlays (tower menu, alerts, leaderboard, dialogs).
+
 
 
 
@@ -2591,12 +2845,14 @@ class App {
         game.onEvent = (e) => this.onGameEvent(e);
         this.visibility = new Visibility();
         this.effects = new Effects();
+        this.alertBoard = new AlertBoard();
         this.game = game;
         game.spawnPlayer(me);
         for (const b of bots) {
             if (Math.random() < 0.75) game.spawnPlayer(b);
         }
         if (this.effects) this.effects.clear();
+        if (this.alertBoard) this.alertBoard.reset();
         this.camera.x = 1280; this.camera.y = 1280; this.camera.zoom = 16;
         if (me.rulerKey != null) this.panToKey(me.rulerKey, false);
         this.selected = null;
@@ -2641,8 +2897,16 @@ class App {
             selected: this.selected,
             dragPath: this.dragPath,
             dragValid: this.dragValid,
+            markType: this.markType(),
             fog: (t) => this.isVisible(t),
         });
+        // Once per game second (and once right after any pause), same cadence as the server.
+        if (this.game.time !== this.lastAlertTick) {
+            this.lastAlertTick = this.game.time;
+            this.renderGameAlerts();
+        }
+        this.effects.meId = this.me.id;
+        this.effects.cameraAt = [this.camera.x, this.camera.y];
         this.effects.render(this.renderer.ctx, (x, y) => this.camera.toScreen(x, y, this.renderer.cw, this.renderer.ch), this.camera.zoom, dt);
         this.updateHud();
         if (this.selected) this.positionMenu();
@@ -2655,6 +2919,13 @@ class App {
         const allVisible = !this.fogEnabled || !this.me.alive;
         vis.update(this.game, this.me.id, allVisible);
         if (!allVisible) vis.addAllies(this.game, this.me.allies);
+    }
+
+    // Holding T highlights every tower of the selected kind (Kiomet's "mark every tower").
+    markType() {
+        if (!this.keys.has('t') || !this.selected) return null;
+        const t = this.game.getTower(this.selected);
+        return t ? t.type : null;
     }
 
     isVisible(t) {
@@ -2817,6 +3088,7 @@ class App {
             ? this.game.setSupplyLine(this.me.id, src.id, path)
             : this.game.deploy(this.me.id, src.id, path);
         if (err) this.toast(err);
+        else if (!sameAsSelection) this.alertBoard.onCapture();
     }
 
     selectTower(t) {
@@ -2911,7 +3183,7 @@ class App {
                     if (!ok) { this.toast('Missing prerequisite'); return; }
                     const err = this.game.upgradeTower(this.me.id, t.id, name);
                     if (err) this.toast(err);
-                    else this.renderMenu();
+                    else { this.alertBoard.onUpgrade(); this.renderMenu(); }
                 });
                 ups.appendChild(row);
             }
@@ -3076,6 +3348,40 @@ class App {
         if (this.alerts.some((a) => a.text === text)) return;
         this.alerts.unshift({ text, sub, kind, until: performance.now() + ms });
         this.renderAlertList();
+    }
+
+    // The Kiomet-style alert column (King safety, tutorial, full/overflow, zombies).
+    renderGameAlerts() {
+        const list = this.alertBoard.evaluate(this.game, this.me);
+        const box = D('game-alerts');
+        if (!box) return;
+        const sig = list.map((a) => a.kind + (a.tower ? a.tower.x + ':' + a.tower.y : '')).join(',');
+        if (sig === this.lastAlertSig) return;
+        this.lastAlertSig = sig;
+        box.innerHTML = '';
+        for (const a of list) {
+            const row = el('div', 'galert ' + a.kind);
+            const txt = el('div', 'galert-text');
+            txt.appendChild(el('div', 'galert-main', a.title));
+            txt.appendChild(el('div', 'galert-sub', a.hint));
+            row.appendChild(txt);
+            if (a.tower) {
+                row.title = 'Click to jump';
+                row.addEventListener('click', () => {
+                    const t = this.game.getTower(a.tower);
+                    if (t) { this.centreOn(t); this.selected = { x: t.x, y: t.y }; this.renderMenu(); }
+                });
+            }
+            const x = el('span', 'galert-x', '✘');
+            x.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                this.alertBoard.dismiss(a.kind);
+                this.lastAlertSig = null;
+                this.renderGameAlerts();
+            });
+            row.appendChild(x);
+            box.appendChild(row);
+        }
     }
 
     renderAlertList() {
@@ -3258,15 +3564,6 @@ function escapeHtml(s) {
 }
 
 window.kiomet = new App();
-
-// Fallback splash while the module graph loads.
-window.addEventListener('error', (e) => {
-  const d = document.createElement('div');
-  d.style.cssText = 'position:fixed;left:8px;bottom:8px;right:8px;background:#7f1d1d;color:#fff;padding:8px;border-radius:6px;font:12px monospace;z-index:999';
-  d.textContent = 'Error: ' + (e.message || e.error);
-  document.body.appendChild(d);
-});
 </script>
-
 </body>
 </html>

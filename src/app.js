@@ -14,6 +14,7 @@ import { botUpdate } from './bot.js';
 import { TOWER_SVG } from './glyphs.js';
 import { Visibility } from './fog.js';
 import { Effects } from './effects.js';
+import { AlertBoard } from './alerts.js';
 import { Renderer, COLORS } from './render.js';
 
 const LABEL = {
@@ -76,12 +77,14 @@ export class App {
         game.onEvent = (e) => this.onGameEvent(e);
         this.visibility = new Visibility();
         this.effects = new Effects();
+        this.alertBoard = new AlertBoard();
         this.game = game;
         game.spawnPlayer(me);
         for (const b of bots) {
             if (Math.random() < 0.75) game.spawnPlayer(b);
         }
         if (this.effects) this.effects.clear();
+        if (this.alertBoard) this.alertBoard.reset();
         this.camera.x = 1280; this.camera.y = 1280; this.camera.zoom = 16;
         if (me.rulerKey != null) this.panToKey(me.rulerKey, false);
         this.selected = null;
@@ -126,8 +129,16 @@ export class App {
             selected: this.selected,
             dragPath: this.dragPath,
             dragValid: this.dragValid,
+            markType: this.markType(),
             fog: (t) => this.isVisible(t),
         });
+        // Once per game second (and once right after any pause), same cadence as the server.
+        if (this.game.time !== this.lastAlertTick) {
+            this.lastAlertTick = this.game.time;
+            this.renderGameAlerts();
+        }
+        this.effects.meId = this.me.id;
+        this.effects.cameraAt = [this.camera.x, this.camera.y];
         this.effects.render(this.renderer.ctx, (x, y) => this.camera.toScreen(x, y, this.renderer.cw, this.renderer.ch), this.camera.zoom, dt);
         this.updateHud();
         if (this.selected) this.positionMenu();
@@ -140,6 +151,13 @@ export class App {
         const allVisible = !this.fogEnabled || !this.me.alive;
         vis.update(this.game, this.me.id, allVisible);
         if (!allVisible) vis.addAllies(this.game, this.me.allies);
+    }
+
+    // Holding T highlights every tower of the selected kind (Kiomet's "mark every tower").
+    markType() {
+        if (!this.keys.has('t') || !this.selected) return null;
+        const t = this.game.getTower(this.selected);
+        return t ? t.type : null;
     }
 
     isVisible(t) {
@@ -302,6 +320,7 @@ export class App {
             ? this.game.setSupplyLine(this.me.id, src.id, path)
             : this.game.deploy(this.me.id, src.id, path);
         if (err) this.toast(err);
+        else if (!sameAsSelection) this.alertBoard.onCapture();
     }
 
     selectTower(t) {
@@ -396,7 +415,7 @@ export class App {
                     if (!ok) { this.toast('Missing prerequisite'); return; }
                     const err = this.game.upgradeTower(this.me.id, t.id, name);
                     if (err) this.toast(err);
-                    else this.renderMenu();
+                    else { this.alertBoard.onUpgrade(); this.renderMenu(); }
                 });
                 ups.appendChild(row);
             }
@@ -561,6 +580,40 @@ export class App {
         if (this.alerts.some((a) => a.text === text)) return;
         this.alerts.unshift({ text, sub, kind, until: performance.now() + ms });
         this.renderAlertList();
+    }
+
+    // The Kiomet-style alert column (King safety, tutorial, full/overflow, zombies).
+    renderGameAlerts() {
+        const list = this.alertBoard.evaluate(this.game, this.me);
+        const box = D('game-alerts');
+        if (!box) return;
+        const sig = list.map((a) => a.kind + (a.tower ? a.tower.x + ':' + a.tower.y : '')).join(',');
+        if (sig === this.lastAlertSig) return;
+        this.lastAlertSig = sig;
+        box.innerHTML = '';
+        for (const a of list) {
+            const row = el('div', 'galert ' + a.kind);
+            const txt = el('div', 'galert-text');
+            txt.appendChild(el('div', 'galert-main', a.title));
+            txt.appendChild(el('div', 'galert-sub', a.hint));
+            row.appendChild(txt);
+            if (a.tower) {
+                row.title = 'Click to jump';
+                row.addEventListener('click', () => {
+                    const t = this.game.getTower(a.tower);
+                    if (t) { this.centreOn(t); this.selected = { x: t.x, y: t.y }; this.renderMenu(); }
+                });
+            }
+            const x = el('span', 'galert-x', '✘');
+            x.addEventListener('click', (ev) => {
+                ev.stopPropagation();
+                this.alertBoard.dismiss(a.kind);
+                this.lastAlertSig = null;
+                this.renderGameAlerts();
+            });
+            row.appendChild(x);
+            box.appendChild(row);
+        }
     }
 
     renderAlertList() {

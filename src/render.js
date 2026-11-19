@@ -9,7 +9,7 @@ import { UNITS, SHIELD, TOWER, TOWERS, UNIT_ID, MAX_ROAD_LENGTH } from './data.j
 import { integerPosition, neighbors, distance } from './geom.js';
 import { progressPerTick } from './rules.js';
 
-import { TOWER_SVG } from './glyphs.js';
+import { TOWER_SVG, UNIT_SVG } from './glyphs.js';
 
 export const COLORS = {
     blue: [0x74, 0xb9, 0xff],
@@ -46,6 +46,7 @@ export class Renderer {
         this.camera = new Camera();
         // SvgColor: each glyph stroked in its owner's colour, cached per colour.
         this.glyphCache = new Map();
+        this.unitCache = new Map();
         this.dpr = Math.min(2, window.devicePixelRatio || 1);
         this.resize();
     }
@@ -83,6 +84,7 @@ export class Renderer {
         this.drawRoads(ctx, game, visible);
         this.drawPaths(ctx, game, view);
         this.drawTowers(ctx, game, visible, view);
+        this.drawMarkers(ctx, game, view);
         this.drawForces(ctx, game, view);
         this.drawSelection(ctx, game, view);
     }
@@ -254,17 +256,76 @@ export class Renderer {
         }
         const rest = counts.filter(([u]) => u !== SHIELD);
         if (!rest.length) return;
+        // Kiomet draws a tiny formation of unit glyphs under the tower; we do the same when
+        // there is room, and fall back to colour pips when zoomed far out.
         const total = rest.reduce((n, [, c]) => n + c, 0);
-        const maxBar = size * 1.05;
-        const w = Math.min(maxBar, Math.max(size * 0.16, Math.sqrt(total) * size * 0.10));
-        let x = cx - w / 2;
-        const y = cy + size * 0.10;
-        const h = Math.max(2, size * 0.10);
-        for (const [u, c] of rest) {
-            const frac = c / total;
-            ctx.fillStyle = UNIT_TINT[u] || '#dfe6ee';
-            ctx.fillRect(x, y, Math.max(1.5, w * frac - 1), h);
-            x += w * frac;
+        const maxPips = 9;
+        const pip = size * 0.22;
+        const rows = Math.min(3, Math.ceil(Math.min(total, maxPips) / 3));
+        const shown = Math.min(total, maxPips);
+        const ox = cx, oy = cy + size * 0.02;
+        const colour = this.shade(this.colorFor(null, null, null), 1);
+        if (size >= 26 && shown <= 8) {
+            let left = shown, i = 0;
+            // A faint dark halo keeps the pale glyphs readable on the dark plinth.
+            ctx.save();
+            ctx.shadowColor = 'rgba(0,0,0,0.85)';
+            ctx.shadowBlur = Math.max(2, pip * 0.35);
+            for (const [u, c] of rest) {
+                let count = c;
+                while (count > 0 && left > 0) {
+                    const col = i % 3, row = Math.floor(i / 3);
+                    const x = ox + (col - 1) * pip * 0.95;
+                    const y = oy + row * pip * 0.78;
+                    const img = this.unitGlyph(UNITS[u].name, UNIT_TINT_RGB[u] || [200, 210, 228]);
+                    if (img.complete && img.naturalWidth) {
+                        ctx.drawImage(img, x - pip / 2, y - pip / 2, pip, pip);
+                    }
+                    count -= 1; left -= 1; i += 1;
+                }
+            }
+            ctx.restore();
+        } else {
+            const maxBar = size * 1.05;
+            const w = Math.min(maxBar, Math.max(size * 0.16, Math.sqrt(total) * size * 0.10));
+            let x = cx - w / 2;
+            const y = cy + size * 0.10;
+            const h = Math.max(2, size * 0.10);
+            for (const [u, c] of rest) {
+                const frac = c / total;
+                ctx.fillStyle = UNIT_TINT[u] || '#dfe6ee';
+                ctx.fillRect(x, y, Math.max(1.5, w * frac - 1), h);
+                x += w * frac;
+            }
+        }
+    }
+
+    // Kiomet's "T" marker: a small diamond bobbing over every tower of the selected kind,
+    // drawn whenever `view.markType` matches (the app sets it while T is held).
+    drawMarkers(ctx, game, view) {
+        if (!view || !view.markType) return;
+        const z = this.camera.zoom;
+        const scale = Math.max(2, z * 0.025);
+        const bob = Math.abs(Math.sin((performance.now() / 1000) * Math.PI));
+        for (const t of game.towers.values()) {
+            if (t.type !== view.markType) continue;
+            if (this.fog && !this.fog(t)) continue;
+            const a = integerPosition(t.x, t.y);
+            const [sx, sy] = this.camera.toScreen(a[0], a[1], this.cw, this.ch);
+            if (sx < -20 || sy < -20 || sx > this.cw + 20 || sy > this.ch + 20) continue;
+            const y = sy - z * 0.95 - scale * (0.45 + bob * 0.12);
+            const w = scale * 0.9, h = scale * 1.2;
+            ctx.beginPath();
+            ctx.moveTo(sx, y - h / 2);
+            ctx.lineTo(sx + w, y);
+            ctx.lineTo(sx, y + h / 2);
+            ctx.lineTo(sx - w, y);
+            ctx.closePath();
+            ctx.fillStyle = `rgba(255,255,255,${0.55 + bob * 0.35})`;
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
         }
     }
 
@@ -287,6 +348,15 @@ export class Renderer {
             ctx.strokeStyle = 'rgba(0,0,0,0.35)';
             ctx.lineWidth = 1;
             ctx.stroke();
+            // The lead unit's glyph on the marker, like the real game's marching columns.
+            if (z > 15) {
+                const lead = f.units.counts().filter(([u]) => u !== SHIELD).sort((a, b) => b[1] - a[1])[0];
+                if (lead) {
+                    const img = this.unitGlyph(UNITS[lead[0]].name, [235, 242, 250]);
+                    const gs = r * 1.7;
+                    if (img.complete && img.naturalWidth) ctx.drawImage(img, sx - gs / 2, sy - gs / 2, gs, gs);
+                }
+            }
             if (z > 13) {
                 const n = f.units.counts().reduce((s, [, c2]) => s + c2, 0);
                 ctx.fillStyle = 'rgba(20,24,26,0.85)';
@@ -327,10 +397,36 @@ export class Renderer {
         return img;
     }
 
+    // Unit glyph, stroked in `color` (the same shapes the real game draws next to towers).
+    unitGlyph(name, color) {
+        const key = name + ':' + color.join(',');
+        let img = this.unitCache.get(key);
+        if (!img) {
+            const svg = (UNIT_SVG[name] || '')
+                .replace(/stroke="#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?"/g, `stroke="rgb(${color.join(',')})"`);
+            img = new Image();
+            img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
+            this.unitCache.set(key, img);
+        }
+        return img;
+    }
+
     shade(c, k) {
         return [c[0], c[1], c[2]].map((v) => Math.max(0, Math.min(255, Math.round(v * k)))).join(',');
     }
 }
+
+const UNIT_TINT_RGB = {
+    [UNIT_ID.Fighter]: [127, 209, 255],
+    [UNIT_ID.Chopper]: [155, 225, 93],
+    [UNIT_ID.Bomber]: [255, 209, 102],
+    [UNIT_ID.Tank]: [242, 166, 90],
+    [UNIT_ID.Soldier]: [232, 238, 246],
+    [UNIT_ID.Shell]: [255, 159, 28],
+    [UNIT_ID.Emp]: [76, 201, 240],
+    [UNIT_ID.Nuke]: [255, 77, 77],
+    [UNIT_ID.Ruler]: [255, 215, 0],
+};
 
 const UNIT_TINT = {
     [UNIT_ID.Fighter]: '#7fd1ff',

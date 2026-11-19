@@ -640,7 +640,9 @@ export class Game {
                 if (winner !== DEFENDER) {
                     if (tp !== null) this.info({ type: 'lostTower', tower: id, player: tp });
                     const newOwner = (winner === ATTACKER && fp !== null) ? fp : null;
-                    if (newOwner !== null) this.info({ type: 'gained', tower: id, player: newOwner });
+                    if (newOwner !== null) {
+                        this.info({ type: 'gained', tower: id, player: newOwner, capturedFrom: tp });
+                    }
                     if (tp !== null || newOwner !== null) t.setOwner(newOwner);
                     if (t.owner === null) {
                         while (TOWER[t.type].down) t.type = TOWER[t.type].down;
